@@ -1,0 +1,17 @@
+{
+  "name": "gitdoc",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Open-source documentation engine: render docs-as-files and serve them.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "npm run build -w @gitdocai/ui && npm run build -w @gitdocai/render && npm run build -w @gitdocai/server && node scripts/assemble-engine.mjs",
+    "test": "node --test",
+    "typecheck": "npm run typecheck -w @gitdocai/ui && npm run typecheck -w @gitdocai/render"
+  }
+}

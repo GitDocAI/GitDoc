@@ -1,0 +1,188 @@
+---
+/**
+ * "On this page" sidebar — mirrors `packages/ui/src/components/TOC.tsx`.
+ * Headings are extracted at build time (so they ship in the HTML for
+ * SEO / no-JS readers); a tiny island layers scroll-spy and smooth
+ * click navigation on top.
+ *
+ * Visibility: only shows on ≥1440px viewports — same breakpoint
+ * publish-web uses. Below that, the article gets the full width.
+ */
+import type { TocHeading } from '../../lib/htmlHelpers'
+
+interface Props {
+  headings: TocHeading[]
+}
+
+const { headings } = Astro.props
+const hide = headings.length === 0
+---
+
+<aside
+  class="toc-aside"
+  data-toc
+  aria-label="On this page"
+  style={hide ? 'display: none' : undefined}
+>
+  <div class="toc-label">On this page</div>
+  <nav class="toc-nav">
+    {headings.map((h) => (
+      <a
+        href={`#${h.id}`}
+        class="toc-link"
+        data-toc-target={h.id}
+        style={`padding-left: ${8 + (h.level - 1) * 12}px`}
+      >
+        {h.text}
+      </a>
+    ))}
+  </nav>
+</aside>
+
+<script>
+  /* Scroll-spy + smooth click for the TOC. Lives inline because the
+     selectors are coupled to this component's classes/data attrs.
+     Re-binds on `astro:page-load` to survive view transitions. */
+  function wireToc() {
+    const aside = document.querySelector<HTMLElement>('[data-toc]')
+    if (!aside) return
+
+    const links = Array.from(
+      aside.querySelectorAll<HTMLAnchorElement>('[data-toc-target]'),
+    )
+    if (links.length === 0) return
+
+    /* The article is the nearest preceding `.doc-article` sibling
+       (kept stable by the route layout). Scoping here means the TOC
+       won't accidentally track headings outside the current page. */
+    const article = document.querySelector<HTMLElement>('.doc-article')
+    if (!article) return
+
+    /* Click → smooth scroll. We compute the scroll target relative
+       to the article's overflow container; `scrollIntoView` Just
+       Works because the container has `scroll-margin-top` on the
+       headings via CSS below. */
+    const setActive = (id: string) => {
+      for (const a of links) {
+        const isActive = a.dataset.tocTarget === id
+        a.classList.toggle('toc-link--active', isActive)
+      }
+    }
+
+    let clickLockUntil = 0
+    for (const a of links) {
+      a.addEventListener('click', (ev) => {
+        const id = a.dataset.tocTarget
+        if (!id) return
+        const el = article.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`)
+        if (!el) return
+        ev.preventDefault()
+        clickLockUntil = Date.now() + 600
+        setActive(id)
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        /* Update the URL hash without jumping. */
+        history.replaceState(null, '', `#${id}`)
+      })
+    }
+
+    /* Pick the heading whose top is closest-to-but-not-past the
+       offset line (120px from the top of the viewport — same as
+       publish-web). Re-evaluates on scroll and on resize. */
+    const ids = links.map((l) => l.dataset.tocTarget!).filter(Boolean)
+    const calc = () => {
+      if (Date.now() < clickLockUntil) return
+      const offset = 120
+      let active: string | null = null
+      for (const id of ids) {
+        const el = article.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`)
+        if (!el) continue
+        const top = el.getBoundingClientRect().top
+        if (top <= offset) active = id
+        else break
+      }
+      if (!active && ids.length > 0) {
+        const first = article.querySelector<HTMLElement>(`[id="${CSS.escape(ids[0]!)}"]`)
+        if (first && first.getBoundingClientRect().top < window.innerHeight * 0.6) {
+          active = ids[0]!
+        }
+      }
+      if (active) setActive(active)
+    }
+
+    /* Bind to the page-level scroll wrapper marked in `[...all].astro`
+       with `data-page-scroll`. Falls back to `window` if the structure
+       changes. */
+    const scrollHost = article.closest<HTMLElement>('[data-page-scroll]') ?? null
+    const scrollTarget: Window | HTMLElement = scrollHost ?? window
+    scrollTarget.addEventListener('scroll', calc, { passive: true })
+    window.addEventListener('resize', calc)
+    calc()
+  }
+
+  wireToc()
+  document.addEventListener('astro:page-load', wireToc)
+</script>
+
+<style>
+  .toc-aside {
+    width: 200px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 32px;
+    max-height: calc(100vh - 64px);
+    align-self: flex-start;
+    padding-left: 16px;
+    overflow-y: auto;
+    overflow-x: inherit;
+    /* Hidden on narrow viewports where the article needs all the
+       reading width it can get. We use `display: none` (not just
+       `visibility: hidden`) so the 200px slot isn't reserved in the
+       flex layout — otherwise it squeezes the article on phones. */
+    display: none;
+  }
+  @media (min-width: 1280px) {
+    .toc-aside {
+      display: block;
+    }
+  }
+
+  .toc-label {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: color-mix(in srgb, var(--foreground) 50%, var(--background) 50%);
+    margin-bottom: 12px;
+  }
+
+  .toc-nav {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .toc-link {
+    display: block;
+    padding: 5px 8px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: color-mix(in srgb, var(--foreground) 50%, var(--background) 50%);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: color 0.15s, background-color 0.15s;
+  }
+  .toc-link:hover {
+    color: color-mix(in srgb, var(--foreground) 75%, var(--background) 25%);
+    background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  }
+  .toc-link--active {
+    color: color-mix(in srgb, var(--foreground) 90%, var(--background) 10%);
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    font-weight: 500;
+  }
+
+  /* Centered arrangement (Mist) — accent color, no shaded bg. */
+  [data-arrangement="centered"] .toc-link--active {
+    color: var(--primary);
+    background: transparent;
+  }
+</style>

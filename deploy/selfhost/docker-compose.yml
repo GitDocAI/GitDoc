@@ -1,0 +1,30 @@
+# Self-hosted gitdoc server: one container, one volume.
+#
+#   cp .env.example .env        # set PUBLISH_TOKEN
+#   docker compose up -d --build
+#
+# Then, from your docs folder:
+#   gitdoc connect http://localhost:8080 --token <PUBLISH_TOKEN>
+#   gitdoc publish
+services:
+  gitdoc:
+    build:
+      context: ../..
+      dockerfile: deploy/selfhost/Dockerfile
+    image: gitdocai/gitdoc-server:dev
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # Publishing is disabled unless this is set.
+      PUBLISH_TOKEN: ${PUBLISH_TOKEN:?set PUBLISH_TOKEN in .env}
+      # With one site published it answers on any host; with several, each
+      # answers only on its own hostname.
+      SINGLE_SITE: "true"
+      LIST_SITES: "true"
+      PUBLISH_MAX_MB: ${PUBLISH_MAX_MB:-200}
+    volumes:
+      - gitdoc-data:/data
+
+volumes:
+  gitdoc-data:

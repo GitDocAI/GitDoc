@@ -1,0 +1,26 @@
+{
+  "name": "@gitdocai/render",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Renders a documentation (MDX) to HTML and writes the published bundle to a directory or to R2.",
+  "bin": {
+    "gitdoc-render": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/cli.js --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@gitdocai/ui": "0.1.0",
+    "image-size": "^2.0.2",
+    "shiki": "^3.13.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.25.12",
+    "typescript": "~5.6.2"
+  }
+}

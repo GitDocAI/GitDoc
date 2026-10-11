@@ -1,0 +1,115 @@
+---
+/**
+ * One row of the static sidebar. Recursive: renders children via
+ * `Astro.self`. Groups render as a static header + always-visible children
+ * (no chevron, no collapse). Leaves are <a href> for native navigation.
+ *
+ * Each row supports a custom `page.icon` from the manifest. Leaves
+ * fall back to `file-text` when no icon is provided; groups render
+ * with no icon when unset.
+ */
+import { iconHtml } from '../../lib/iconLibrary'
+import type { PresetArrangement } from '../../lib/presets'
+
+interface Page {
+  id: string
+  title: string
+  slug: string
+  type: 'page' | 'folder' | string
+  icon?: string
+  /** HTTP verb for `api_endpoint` rows — renders a colored method badge
+   *  instead of the icon (mirrors the dashboard's PagesSidebar). */
+  method?: string
+  children?: Page[]
+}
+
+/* Colored HTTP-method chip for API-reference (`api_endpoint`) rows, so the
+   verb is scannable. Mirrors packages/ui PagesSidebar's MethodBadge. */
+const METHOD_COLORS: Record<string, string> = {
+  GET: '#10b981', POST: '#3b82f6', PUT: '#f59e0b', PATCH: '#8b5cf6', DELETE: '#ef4444',
+}
+function methodBadge(method: string | undefined): string | null {
+  if (!method) return null
+  const m = method.toUpperCase()
+  const color = METHOD_COLORS[m] ?? '#6b7280'
+  const label = m === 'DELETE' ? 'DEL' : m
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;padding:1px 4px;border-radius:4px;font-size:9px;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:${color}20;color:${color};border:1px solid ${color}40;flex-shrink:0;min-width:28px">${label}</span>`
+}
+interface Props {
+  page: Page
+  activeId: string
+  /** ids of groups that should render open (contain the active page) */
+  openGroups: Set<string>
+  depth?: number
+  arrangement: PresetArrangement
+}
+
+const { page, activeId, openGroups, depth = 0, arrangement } = Astro.props
+/* Centered arrangement aligns every row's left edge (and the active
+   pill's left edge) with the logo column. Group titles sit flush at
+   0 padding; clickable rows get 8px of inner padding so the active
+   pill has breathing room around its icon. Full-width keeps the
+   legacy indentation pattern (12px base + 12px per depth). */
+const isGroup = (page.children?.length ?? 0) > 0 || page.type === 'folder'
+const indent =
+  arrangement === 'centered'
+    ? { paddingLeft: isGroup ? '0' : '8px', paddingRight: isGroup ? '0' : '8px' }
+    : { paddingLeft: `${12 + depth * 12}px` }
+const isActive = page.id === activeId
+/* API-endpoint leaves show the method badge in place of the icon. */
+const leafBadge =
+  !isGroup && page.type === 'api_endpoint' ? methodBadge(page.method) : null
+---
+
+{
+  isGroup ? (
+    <div class="[&:not(:first-child)]:mt-5">
+      <div
+        class="flex items-center gap-2 py-1.5 text-sm font-semibold text-foreground/75 select-none"
+        style={indent}
+      >
+        {page.icon && (
+          <span
+            class="inline-flex items-center justify-center shrink-0 opacity-80"
+            style="width:14px;height:14px"
+            set:html={iconHtml(page.icon, 14)}
+          />
+        )}
+        <span class="truncate">{page.title}</span>
+      </div>
+      <div class="space-y-0.5">
+        {page.children?.map((child) => (
+          <Astro.self
+            page={child}
+            activeId={activeId}
+            openGroups={openGroups}
+            depth={depth + 1}
+            arrangement={arrangement}
+          />
+        ))}
+      </div>
+    </div>
+  ) : (
+    <a
+      href={page.slug}
+      class:list={[
+        'flex items-center gap-2 py-1.5 text-sm rounded-lg no-underline transition-colors',
+        isActive
+          ? 'text-primary font-medium'
+          : 'text-foreground/80 hover:text-foreground hover:bg-muted/40',
+      ]}
+      style={indent}
+    >
+      {leafBadge ? (
+        <Fragment set:html={leafBadge} />
+      ) : page.icon && (
+        <span
+          class="inline-flex items-center justify-center shrink-0 opacity-70"
+          style="width:14px;height:14px"
+          set:html={iconHtml(page.icon, 14)}
+        />
+      )}
+      <span class="truncate">{page.title}</span>
+    </a>
+  )
+}

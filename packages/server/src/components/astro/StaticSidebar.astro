@@ -1,0 +1,303 @@
+---
+/**
+ * Static-friendly pages tree for the SSG build.
+ *
+ * Mirrors @gitdocai/ui PagesSidebar but every navigable row is a real
+ * <a href> and every group is a <details>/<summary> — so navigation
+ * and expand/collapse work without JS.
+ */
+import SidebarNode from './SidebarNode.astro'
+import type { PresetArrangement } from '../../lib/presets'
+
+interface Page {
+  id: string
+  title: string
+  slug: string
+  type: 'page' | 'folder' | string
+  icon?: string
+  method?: string
+  children?: Page[]
+}
+interface Props {
+  pages: Page[]
+  activePageId: string
+  /** Drives layout tweaks — centered hides the border-right and pulls
+   *  items flush-left so they align with the logo above. */
+  arrangement: PresetArrangement
+  /** When true, search + Ask AI pills render at the top of the sidebar
+   *  (Jade) instead of in the navbar. */
+  searchInSidebar?: boolean
+  /** Forwarded from the manifest's `assistant.enabled`. Only matters
+   *  when `searchInSidebar` is true — controls whether the Ask AI pill
+   *  appears next to the search button at the top of the sidebar. */
+  assistantEnabled?: boolean
+  /** Mobile drawer chrome — these only render inside the drawer
+   *  (`lg:hidden`); on desktop the sidebar is just the page tree. */
+  docName?: string
+  logoDarkUrl?: string
+  logoLightUrl?: string
+  /** Intrinsic logo pixel size (manifest) → <img width/height> so the
+   *  drawer logo reserves its box before load (CLS). */
+  logoDarkWidth?: number
+  logoDarkHeight?: number
+  logoLightWidth?: number
+  logoLightHeight?: number
+  showName?: boolean
+  hasBothModes?: boolean
+  versions?: Array<{ id: string; name: string; slug: string }>
+  activeVersionName?: string
+  /** When false (default), the version selector stays hidden even if
+   *  the doc has versions. The manifest's `version_selector_enabled`
+   *  flag drives this — Mintlify pattern: opt-in dropdown. */
+  versionSelectorEnabled?: boolean
+  /** Section/KB tabs for the mobile drawer's section switcher.
+   *  Each entry already includes its target href so the switcher
+   *  can navigate directly on selection. */
+  sections?: Array<{ id: string; name: string; href: string }>
+  activeSectionId?: string
+  /** On the KB landing the sidebar collapses to a mobile-only drawer
+   *  (full-width hero needs the desktop room) — adds `lg:hidden` so
+   *  it disappears on desktop but stays drawer-accessible on phones. */
+  isKbHome?: boolean
+}
+const {
+  pages,
+  activePageId,
+  arrangement,
+  searchInSidebar = false,
+  assistantEnabled = false,
+  docName = '',
+  logoDarkUrl,
+  logoLightUrl,
+  logoDarkWidth,
+  logoDarkHeight,
+  logoLightWidth,
+  logoLightHeight,
+  showName = true,
+  hasBothModes = true,
+  versions = [],
+  activeVersionName = '',
+  versionSelectorEnabled = false,
+  sections = [],
+  activeSectionId = '',
+  isKbHome = false,
+} = Astro.props
+const centered = arrangement === 'centered'
+const darkLogo = logoDarkUrl ?? logoLightUrl
+const lightLogo = logoLightUrl ?? logoDarkUrl
+const darkLogoW = logoDarkWidth ?? logoLightWidth
+const darkLogoH = logoDarkHeight ?? logoLightHeight
+const lightLogoW = logoLightWidth ?? logoDarkWidth
+const lightLogoH = logoLightHeight ?? logoDarkHeight
+const hasAnyLogo = Boolean(darkLogo || lightLogo)
+const showVersionSelector = versionSelectorEnabled && versions.length > 0
+const showSectionSelector = sections.length > 0
+
+// Collect every group id on the path from root to the active page so
+// they render with `open` by default.
+function collectOpenGroups(tree: Page[], targetId: string): Set<string> {
+  const open = new Set<string>()
+  function walk(nodes: Page[], parents: string[]): boolean {
+    for (const node of nodes) {
+      if (node.id === targetId) {
+        for (const p of parents) open.add(p)
+        return true
+      }
+      if (node.children?.length && walk(node.children, [...parents, node.id])) {
+        return true
+      }
+    }
+    return false
+  }
+  walk(tree, [])
+  return open
+}
+const openGroups = collectOpenGroups(pages, activePageId)
+---
+
+<aside
+  class:list={[
+    'static-sidebar flex flex-col shrink-0 relative sticky top-0 self-start',
+    isKbHome ? 'lg:hidden' : '',
+  ]}
+  style={`${centered ? '' : 'border-right: 1px solid var(--chrome-border);'} font-family: inherit; height: calc(100vh - var(--chrome-height, 4rem))`}
+>
+  {/* Mobile drawer header — logo (left) + theme toggle (right), and
+      a version selector below when the doc has more than one version.
+      Hidden on desktop where the sidebar is a regular column and these
+      affordances live in the navbar / not-needed. */}
+  <div class="lg:hidden flex flex-col gap-3 px-4 pt-4 pb-3 border-b" style="border-bottom-color: var(--chrome-border)">
+    <div class="flex items-center justify-between gap-3">
+      <a href="/" class="flex items-center gap-2 no-underline text-foreground min-w-0">
+        {hasAnyLogo ? (
+          <>
+            {darkLogo && (
+              <img
+                src={darkLogo}
+                alt={docName ? `${docName} logo` : 'Logo'}
+                width={darkLogoW}
+                height={darkLogoH}
+                class="logo-dark h-7 w-auto max-w-[140px] object-contain"
+                loading="eager"
+              />
+            )}
+            {lightLogo && (
+              <img
+                src={lightLogo}
+                alt={docName ? `${docName} logo` : 'Logo'}
+                width={lightLogoW}
+                height={lightLogoH}
+                class="logo-light h-7 w-auto max-w-[140px] object-contain"
+                loading="eager"
+              />
+            )}
+          </>
+        ) : (
+          <div class="w-7 h-7 rounded-lg flex items-center justify-center bg-primary">
+            <span class="text-sm font-bold text-primary-foreground">{(docName[0] ?? 'D').toUpperCase()}</span>
+          </div>
+        )}
+        {showName !== false && docName && (
+          <span class="font-bold text-[15px] tracking-tight truncate">{docName}</span>
+        )}
+      </a>
+      {hasBothModes !== false && (
+        <button
+          type="button"
+          data-theme-toggle
+          aria-label="Toggle theme"
+          title="Toggle light/dark mode"
+          class="grid place-items-center w-8 h-8 rounded-lg text-foreground/70 hover:text-foreground hover:bg-foreground/8 transition-colors cursor-pointer shrink-0"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="theme-icon-sun" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2" />
+            <path d="M12 20v2" />
+            <path d="m4.93 4.93 1.41 1.41" />
+            <path d="m17.66 17.66 1.41 1.41" />
+            <path d="M2 12h2" />
+            <path d="M20 12h2" />
+            <path d="m6.34 17.66-1.41 1.41" />
+            <path d="m19.07 4.93-1.41 1.41" />
+          </svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="theme-icon-moon" aria-hidden="true">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+          </svg>
+        </button>
+      )}
+    </div>
+    {showVersionSelector && (
+      <details class="sidebar-select">
+        <summary class="sidebar-select__field">
+          <span class="sidebar-select__value">{activeVersionName}</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="sidebar-select__chevron">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </summary>
+        <ul class="sidebar-select__menu">
+          {versions.map((v) => (
+            <li>
+              <a
+                href={`/${v.slug}`}
+                class:list={['sidebar-select__option', v.name === activeVersionName ? 'is-active' : '']}
+              >
+                {v.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </details>
+    )}
+    {showSectionSelector && (
+      <details class="sidebar-select">
+        <summary class="sidebar-select__field">
+          <span class="sidebar-select__value">
+            {sections.find((s) => s.id === activeSectionId)?.name ?? 'Sections'}
+          </span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="sidebar-select__chevron">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </summary>
+        <ul class="sidebar-select__menu">
+          {sections.map((s) => (
+            <li>
+              <a
+                href={s.href}
+                class:list={['sidebar-select__option', s.id === activeSectionId ? 'is-active' : '']}
+              >
+                {s.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </details>
+    )}
+  </div>
+  {searchInSidebar && (
+    <div class="hidden lg:flex items-center gap-2 p-3 border-b" style="border-bottom-color: var(--chrome-border)">
+      <button
+        type="button"
+        data-search-trigger
+        aria-label="Search documentation"
+        title="Search documentation (⌘K)"
+        class="group flex flex-1 items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-lg bg-foreground/5 hover:bg-foreground/10 text-muted-foreground hover:text-foreground transition-colors text-sm cursor-pointer"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0">
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <span class="flex-1 text-left">Search...</span>
+        <kbd class="inline-flex items-center justify-center text-[11px] font-medium opacity-70 px-1.5 py-0.5 rounded border border-foreground/15 transition-colors font-sans">⌘K</kbd>
+      </button>
+      {assistantEnabled && (
+        <button
+          type="button"
+          data-ask-ai
+          aria-label="Ask AI (⌥I)"
+          title="Ask AI (⌥I)"
+          class="group grid place-items-center w-8 h-8 rounded-lg bg-foreground/5 hover:bg-foreground/10 text-foreground transition-colors cursor-pointer"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="text-primary">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+            <path d="M5 3v4" />
+            <path d="M3 5h4" />
+            <path d="M19 17v4" />
+            <path d="M17 19h4" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )}
+  <nav
+    data-sidebar-scroll
+    data-section-id={activeSectionId}
+    class:list={[
+      'flex-1 min-h-0 space-y-0.5 overflow-y-auto',
+      /* Centered (Mist) hugs the left edge on desktop so items align
+         flush with the logo above. In the mobile/tablet drawer there
+         is no logo column to align to, so adding a 4-unit left pad
+         keeps items off the screen edge. */
+      centered ? 'py-2 pr-2 pl-4 lg:pl-0' : 'p-2',
+    ]}
+  >
+    {pages.map((p) => (
+      <SidebarNode
+        page={p}
+        activeId={activePageId}
+        openGroups={openGroups}
+        arrangement={arrangement}
+      />
+    ))}
+  </nav>
+
+  {/* Drag handle — picked up by /sidebar-resize.js. The hit zone is
+      wider than the visible line (1px line, 8px hit) so it's easy to
+      grab without taking visible space. */}
+  <div
+    class="sidebar-resize-handle"
+    data-sidebar-resize
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize sidebar"
+  />
+</aside>

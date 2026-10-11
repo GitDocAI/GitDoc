@@ -1,0 +1,20 @@
+gitdoc
+Copyright (c) GitDocAI
+
+This product includes third-party material under its own licenses:
+
+packages/server/public/vendor/font-awesome
+  Font Awesome 4.7.0 by Dave Gandy, https://fontawesome.io
+  Font: SIL Open Font License 1.1   CSS: MIT License
+
+packages/server/public/vendor/primeicons.css, vendor/fonts/primeicons.*
+  PrimeIcons, https://github.com/primefaces/primeicons
+  MIT License
+
+packages/server/public/vendor/material-icons
+  Material Icons, https://github.com/google/material-design-icons
+  Apache License 2.0
+
+Native image libraries (libvips, through sharp) are present in the dependency
+tree of Astro and are licensed under the LGPL-3.0; they are not used at runtime
+(image optimization is disabled).

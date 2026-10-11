@@ -1,0 +1,174 @@
+---
+/**
+ * Per-page footer — rendered at the bottom of each doc article and
+ * the KB landing. Mirrors publish-web's `DocFooter`:
+ *   - Row 1: site name (left) + social link icons (right)
+ *   - Row 2: copyright centered below
+ *
+ * Driven entirely by the manifest's `config.footer` block — when
+ * `enabled` is false (or the block is missing) we render nothing.
+ * Icon rendering reuses the shared `iconLibrary` (same one StaticHeader
+ * uses) instead of a local copy — an earlier local copy here went stale
+ * and silently fell back to the link icon for any key added after it was
+ * written (see 1fb4528a, which fixed the same drift in the navbar).
+ */
+import { iconHtml } from '../../lib/iconLibrary'
+
+interface FooterLink {
+  url: string
+  label?: string
+  icon?: string
+  style?: 'default' | 'primary' | 'subtle'
+}
+
+interface FooterConfig {
+  enabled?: boolean
+  links?: FooterLink[]
+  copyright?: string
+  /** When true, the "Powered by" line reads "Powered by GitDoc"
+   *  and links to https://gitdoc.ai. When false (or absent), the
+   *  line shows just the documentation name as plain text. */
+  powered_by_gitdocai?: boolean
+}
+
+interface Props {
+  config?: FooterConfig
+  siteName?: string
+}
+
+const { config, siteName = '' } = Astro.props
+
+/* Bail when the customer disabled the footer or never set it up. */
+const enabled = config?.enabled !== false
+const links = config?.links ?? []
+const copyright = config?.copyright ?? `${siteName} © ${new Date().getFullYear()} All rights reserved`
+const poweredByGitdocai = config?.powered_by_gitdocai === true
+---
+
+{enabled && (
+  <footer class="static-footer" style="border-top: 1px solid var(--chrome-border)">
+    <div class="static-footer-row">
+      <div class="static-footer-links">
+        {links.map((link) => (
+          <a
+            href={link.url}
+            class:list={["static-footer-link", `style-${link.style ?? 'default'}`]}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={link.label || link.icon || link.url}
+          >
+            <Fragment set:html={iconHtml(link.icon, 18)} />
+            {link.label && <span class="static-footer-link-label">{link.label}</span>}
+          </a>
+        ))}
+      </div>
+      {poweredByGitdocai ? (
+        <a
+          href="https://gitdoc.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="static-footer-powered static-footer-powered--link"
+        >
+          Powered by <span class="static-footer-name">GitDoc</span>
+        </a>
+      ) : (
+        <span class="static-footer-powered">
+          <span class="static-footer-name">{siteName}</span>
+        </span>
+      )}
+    </div>
+    <div class="static-footer-copyright">
+      <small>{copyright}</small>
+    </div>
+  </footer>
+)}
+
+<style>
+  .static-footer {
+    padding: 24px 0;
+    position: relative;
+    margin-top: 48px;
+  }
+
+  .static-footer-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  /* Pull the "Powered by" line down so it visually sits on the same
+     baseline as the first row of icons (icon links have padding that
+     pushes them taller than the text). */
+  .static-footer-powered {
+    padding-top: 8px;
+  }
+
+  .static-footer-powered {
+    font-size: 13px;
+    color: color-mix(in srgb, var(--foreground) 60%, var(--background) 40%);
+  }
+  .static-footer-name {
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .static-footer-powered--link {
+    text-decoration: none;
+    color: inherit;
+    transition: color 0.15s;
+  }
+  .static-footer-powered--link:hover,
+  .static-footer-powered--link:hover .static-footer-name {
+    color: var(--primary);
+  }
+
+  .static-footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .static-footer-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: color-mix(in srgb, var(--foreground) 60%, var(--background) 40%);
+    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+  }
+  .static-footer-link:hover {
+    color: var(--foreground);
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  }
+  .static-footer-link.style-primary {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .static-footer-link.style-primary:hover {
+    background: var(--primary);
+    filter: brightness(1.1);
+  }
+  .static-footer-link.style-subtle {
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  }
+  .static-footer-link-label {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .static-footer-copyright {
+    display: flex;
+    justify-content: center;
+    margin-top: 16px;
+    color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+  }
+  .static-footer-copyright small {
+    font-size: 12px;
+    opacity: 0.7;
+  }
+</style>

@@ -1,0 +1,369 @@
+@import "tailwindcss";
+
+/* Include @gitdocai/ui sources for Tailwind class scanning */
+@source "../../ui/src";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Base variables */
+:root {
+  --radius: 0.5rem;
+  /* Navbar + sidebar blend with the page background — no separate
+     tint. Borders use a subtle foreground overlay for separation. */
+  --chrome-border: color-mix(in srgb, var(--foreground) 10%, var(--background));
+  /* Body text in the article area — clearly muted gray so the
+     paragraphs read like "narrative" while headings stay at full
+     text_color and stand out. Matches the slate-500/600 vibe
+     publish-web uses (paragraph text is noticeably grayer than
+     the heading on top). User-tuned ratio. */
+  --content-text: color-mix(in srgb, var(--foreground) 72%, var(--background) 28%);
+
+  /* `--font-heading` is intentionally NOT declared here — that would
+     re-define it in a stylesheet that loads AFTER BaseLayout's
+     `<style>` override, overwriting the per-doc value back to the
+     body font. The consumers in publish-content.css use
+     `var(--font-heading, var(--font-sans))` so the fallback kicks
+     in when the manifest doesn't override. */
+}
+
+/* Layout shape — drives the corner radius of cards, callouts,
+   accordions, buttons. Each variant pins all 4 radius tokens
+   explicitly so `rounded-xl` doesn't keep a 4px round in sharp
+   (its @theme calc adds +4px on top of --radius). */
+html[data-shape="sharp"] {
+  --radius: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+}
+html[data-shape="soft"] {
+  --radius: 0.5rem;
+  /* sm/md/lg/xl inherit the @theme calc(): 0.125 / 0.375 / 0.5 / 0.75 */
+}
+html[data-shape="round"] {
+  --radius: 1rem;
+  --radius-sm: 0.625rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+}
+
+/* Light theme (default) */
+:root {
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.15 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0 0);
+  --primary: oklch(0.50 0.20 264);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95 0 0);
+  --secondary-foreground: oklch(0.15 0 0);
+  --muted: oklch(0.95 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.75 0.12 200);
+  --accent-foreground: oklch(0.15 0 0);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.50 0.20 264);
+  --sidebar: oklch(0.97 0 0);
+  --sidebar-foreground: oklch(0.15 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-accent: oklch(0.93 0 0);
+  --sidebar-accent-foreground: oklch(0.15 0 0);
+
+  /* Component tokens the rendered presenters reference (CardPresenter,
+     ImagePresenter). Defined theme-aware via color-mix on --foreground
+     so ONE value adapts to both light + dark (the mix recomputes when
+     .dark flips --foreground). Without these the presenters fall back
+     to hardcoded white-ish colors that vanish on light backgrounds —
+     that's why card/image borders were invisible in the light theme. */
+  --card-border: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --card-icon-bg: color-mix(in srgb, var(--foreground) 6%, transparent);
+  --image-frame-border: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+
+/* Dark theme */
+.dark {
+  --background: oklch(0.12 0 0);
+  --foreground: oklch(0.93 0 0);
+  --card: oklch(0.16 0 0);
+  --card-foreground: oklch(0.93 0 0);
+  --popover: oklch(0.16 0 0);
+  --popover-foreground: oklch(0.93 0 0);
+  --primary: oklch(0.60 0.20 264);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.2 0 0);
+  --secondary-foreground: oklch(0.93 0 0);
+  --muted: oklch(0.2 0 0);
+  --muted-foreground: oklch(0.6 0 0);
+  --accent: oklch(0.70 0.12 200);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.60 0.20 264);
+  --sidebar: oklch(0.1 0 0);
+  --sidebar-foreground: oklch(0.93 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-accent: oklch(0.18 0 0);
+  --sidebar-accent-foreground: oklch(0.93 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+    /* Trap scrolling inside the article / KB-landing overflow-auto
+       containers. Without this, anything that ever exceeds the
+       viewport by a pixel (a heading's top margin, a long article
+       below the sticky header) drips out of <main> and adds a
+       second outer scrollbar on top of the inner one. */
+    overflow: hidden;
+  }
+
+  /* <main> wraps every page's `<div class="flex flex-col h-screen">`
+     chrome. Force it to fill body exactly so the chrome stays at
+     100vh and never spills outside. */
+  main {
+    height: 100%;
+  }
+}
+
+/* Scrollbar - Dark */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: oklch(0.15 0 0);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.3 0 0);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.4 0 0);
+}
+
+/* Scrollbar - Light */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: oklch(0.95 0 0);
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.8 0 0);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.7 0 0);
+}
+
+/* ---------------------------------------------------------------------------
+   Rich content for AI chat replies (assistant side-panel + KB landing).
+   The chat DOM is injected at runtime, so these MUST stay global — scoped
+   component styles never reach it. Rendered by /md.js.
+   --------------------------------------------------------------------------- */
+.gd-callout {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--callout-accent, var(--primary)) 30%, transparent);
+  background: color-mix(in srgb, var(--callout-accent, var(--primary)) 9%, transparent);
+}
+.gd-callout > :last-child { margin-bottom: 0; }
+.gd-callout__icon { flex-shrink: 0; margin-top: 1px; color: var(--callout-accent, var(--primary)); }
+.gd-callout__body { min-width: 0; flex: 1; }
+.gd-callout__body > :first-child { margin-top: 0; }
+.gd-callout__body > :last-child { margin-bottom: 0; }
+.gd-callout--info { --callout-accent: #3b82f6; }
+.gd-callout--note { --callout-accent: #8b5cf6; }
+.gd-callout--tip { --callout-accent: #10b981; }
+.gd-callout--success { --callout-accent: #22c55e; }
+.gd-callout--warning { --callout-accent: #f59e0b; }
+.gd-callout--danger { --callout-accent: #ef4444; }
+
+.gd-md-table-wrap { margin: 0 0 12px; overflow-x: auto; }
+.gd-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.gd-md-table th,
+.gd-md-table td {
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.gd-md-table th {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.gd-md-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  margin: 4px 0;
+}
+
+.gd-md-video {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin: 0 0 12px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.gd-md-video iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Cards — <Card title icon href>. Icon classes (pi/fa/mi/hi) use the fonts
+   the site already loads for section/nav icons. */
+.gd-card {
+  display: block;
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+a.gd-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+.gd-card__head { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+.gd-card__icon { font-size: 18px; line-height: 1; color: var(--primary); }
+.gd-card__title { font-weight: 600; font-size: 1.02em; color: var(--foreground); }
+.gd-card__body > :first-child { margin-top: 0; }
+.gd-card__body > :last-child { margin-bottom: 0; }
+
+/* Plain blockquotes (callouts are handled above). */
+.assistant-msg__body blockquote,
+.kb-a-body blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid color-mix(in srgb, var(--foreground) 20%, transparent);
+  color: color-mix(in srgb, var(--foreground) 75%, var(--background) 25%);
+}
+
+/* Mermaid host inside chat replies. */
+.assistant-msg__body pre.mermaid,
+.kb-a-body pre.mermaid {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0 0 12px;
+  text-align: center;
+}
+
+/* In the KB chat view you're already chatting in-page, so hide the redundant
+   chat entry points: the floating Ask AI bar and the navbar "Ask AI" pill
+   (which opens the parallel side-panel). Search stays — it's navigation. */
+body:has(.kb-landing[data-chat-active='true']) .assistant-floating,
+body:has(.kb-landing[data-chat-active='true']) [data-ask-ai] {
+  display: none !important;
+}
+
+/* KB answer "Sources" chips (injected at runtime → global). */
+.kb-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.kb-sources-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--foreground) 50%, var(--background) 50%);
+}
+.kb-source {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: color-mix(in srgb, var(--foreground) 75%, var(--background) 25%);
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s;
+}
+a.kb-source:hover {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+}

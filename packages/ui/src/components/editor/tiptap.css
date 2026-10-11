@@ -1,0 +1,1042 @@
+/* Tiptap Editor Styles */
+
+.tiptap-editor {
+  outline: none;
+  text-align: left;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+}
+
+.tiptap-editor > *:first-child {
+  margin-top: 0;
+}
+
+.tiptap-editor > *:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap-editor > * + * {
+  margin-top: 0.75em;
+}
+
+.tiptap-editor * {
+  text-align: left;
+}
+
+.tiptap-editor h1,
+.tiptap-editor h2,
+.tiptap-editor h3 {
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.tiptap-editor h1,
+.tiptap-editor h2,
+.tiptap-editor h3 {
+  margin: 0;
+  padding: 0;
+}
+
+.tiptap-editor h1 {
+  font-size: 30px;
+}
+
+.tiptap-editor h2 {
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+.tiptap-editor h3 {
+  font-size: 20px;
+  margin-bottom: 12px;
+}
+
+/* Header wrappers - default 48px top margin */
+.tiptap-editor .node-heading {
+  margin-top: 48px;
+}
+
+/* Remove top margin when header wrapper is first child */
+.tiptap-editor .node-heading:first-child {
+  margin-top: 0;
+}
+
+/* Remove top margin when preceded by another header */
+.tiptap-editor .node-heading + .node-heading {
+  margin-top: 0;
+}
+
+/* Remove top margin when preceded by separator */
+.tiptap-editor .horizontal-rule-block-wrapper + .node-heading {
+  margin-top: 0;
+}
+
+/* Remove top margin when preceded by paragraph */
+.tiptap-editor p + .node-heading {
+  margin-top: 0;
+}
+
+/* Mobile/tablet responsive headings */
+@media (max-width: 1024px) {
+  .tiptap-editor h1 {
+    font-size: 24px;
+  }
+
+  .tiptap-editor h2 {
+    font-size: 20px;
+    margin-bottom: 12px;
+  }
+
+  .tiptap-editor h3 {
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+
+  .tiptap-editor .node-heading {
+    margin-top: 32px;
+  }
+}
+
+.tiptap-editor p {
+  font-size: 1rem;
+  line-height: 1.8;
+  margin: 0 0 20px 0;
+}
+
+.tiptap-editor ul,
+.tiptap-editor ol {
+  padding-left: 2rem;
+  margin: 1rem 0;
+}
+
+.tiptap-editor ul {
+  list-style-type: disc;
+}
+
+.tiptap-editor ol {
+  list-style-type: decimal;
+}
+
+/* Nested lists */
+.tiptap-editor ul ul {
+  list-style-type: circle;
+}
+
+.tiptap-editor ul ul ul {
+  list-style-type: square;
+}
+
+.tiptap-editor ul li,
+.tiptap-editor ol li {
+  line-height: 1.8;
+  margin-bottom: 0.5rem;
+  padding-left: 0.5rem;
+  display: list-item;
+}
+
+/* Larger and darker bullets/numbers */
+.tiptap-editor ul li::marker {
+  font-size: 1.2em;
+  color: var(--text-color, #374151);
+}
+
+.tiptap-editor ol li::marker {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--text-color, #374151);
+}
+
+/* Dark mode adjustments */
+body[style*="background-color: rgb(13"] .tiptap-editor ul li::marker,
+body[style*="background-color: rgb(13"] .tiptap-editor ol li::marker,
+.dark .tiptap-editor ul li::marker,
+.dark .tiptap-editor ol li::marker {
+  color: #e5e7eb;
+}
+
+/* Task list styles */
+.tiptap-editor ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tiptap-editor ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding-left: 0;
+}
+
+.tiptap-editor ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  cursor: pointer;
+}
+
+.tiptap-editor ul[data-type="taskList"] li > label {
+  position: relative;
+}
+
+.tiptap-editor ul[data-type="taskList"] li > label input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.tiptap-editor ul[data-type="taskList"] li > label::before {
+  font-family: 'primeicons';
+  font-size: 1.2rem;
+  line-height: 1;
+  display: inline-block;
+  transition: all 0.2s;
+}
+
+/* Hide the span::before that appears after the checkbox */
+.tiptap-editor ul[data-type="taskList"] li > label input[type="checkbox"] + span::before {
+  display: none !important;
+  content: none !important;
+}
+
+/* Unchecked state */
+.tiptap-editor ul[data-type="taskList"] li > label:not(:has(input:checked))::before {
+  content: '\e9d1'; /* pi-stop */
+  color: var(--primary-color, #3b82f6);
+  opacity: 0.6;
+}
+
+/* Checked state */
+.tiptap-editor ul[data-type="taskList"] li > label:has(input:checked)::before {
+  content: '\e98c'; /* pi-check-square */
+  color: var(--primary-color, #3b82f6);
+  opacity: 1;
+}
+
+/* Hover effect - only in editable mode */
+.tiptap-editor:not([contenteditable="false"]) ul[data-type="taskList"] li > label:hover::before {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* Disable pointer events in preview mode */
+.tiptap-editor[contenteditable="false"] ul[data-type="taskList"] li > label {
+  pointer-events: none;
+  cursor: default;
+}
+
+.tiptap-editor ul[data-type="taskList"] li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.tiptap-editor blockquote {
+  padding-left: 1rem;
+  border-left: 3px solid #3b82f6;
+  margin: 1.5rem 0;
+  font-style: italic;
+  color: #6b7280;
+}
+
+/* Inline code styling */
+.tiptap-editor code {
+  background-color: #f3f4f6;
+  color: #1f2937;
+  border-radius: var(--radius-sm);
+  padding: 0.125rem 0.25rem;
+  font-family: 'JetBrainsMono', 'Courier New', Courier, monospace;
+  font-size: 0.875rem;
+}
+
+/* Dark theme inline code */
+.tiptap-editor.dark-theme code {
+  background-color: #374151;
+  color: #f3f4f6;
+}
+
+/* Reset ALL styles for code inside ANY pre block - Shiki handles everything */
+.tiptap-editor pre code,
+.tiptap-editor pre.shiki code,
+.tiptap-editor .shiki code {
+  background: transparent !important;
+  color: inherit !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+}
+
+/* Ensure Shiki spans use their CSS variable colors - Light theme */
+.tiptap-editor pre.shiki span,
+.tiptap-editor .shiki span,
+.tiptap-editor pre.shiki code span,
+.tiptap-editor .shiki code span {
+  color: var(--shiki-light) !important;
+  background: transparent !important;
+}
+
+.tiptap-editor pre.shiki,
+.tiptap-editor .shiki {
+  background-color: var(--shiki-light-bg) !important;
+}
+
+/* Ensure Shiki spans use their CSS variable colors - Dark theme */
+.tiptap-editor.dark-theme pre.shiki span,
+.tiptap-editor.dark-theme .shiki span,
+.tiptap-editor.dark-theme pre.shiki code span,
+.tiptap-editor.dark-theme .shiki code span {
+  color: var(--shiki-dark) !important;
+  background: transparent !important;
+}
+
+.tiptap-editor.dark-theme pre.shiki,
+.tiptap-editor.dark-theme .shiki {
+  background-color: var(--shiki-dark-bg) !important;
+}
+
+/* Font for Shiki code blocks */
+.tiptap-editor pre.shiki,
+.tiptap-editor .shiki,
+.tiptap-editor pre.shiki code,
+.tiptap-editor .shiki code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace !important;
+  font-weight: 500 !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+}
+
+.tiptap-editor pre {
+  background-color: #1f2937;
+  color: #f9fafb;
+  font-family: 'JetBrainsMono', 'Courier New', Courier, monospace;
+  padding: 1rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin: 1rem 0;
+  position: relative;
+}
+
+/* Allow Shiki pre elements to use their own colors */
+.tiptap-editor pre.shiki,
+.tiptap-editor .shiki pre,
+.code-block-syntax-highlight pre {
+  color: unset;
+}
+
+/* Light theme for code blocks - removed, now handled inline */
+
+/* Code inside pre blocks should inherit styles - except syntax highlighted blocks */
+.tiptap-editor pre:not(.shiki) code {
+  background: none !important;
+  color: inherit !important;
+  font-size: 0.875rem;
+  padding: 0;
+}
+
+/* Also apply to dark theme - except syntax highlighted blocks */
+.tiptap-editor.dark-theme pre:not(.shiki) code {
+  background: none !important;
+  color: inherit !important;
+}
+
+
+.tiptap-editor hr {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 2rem 0;
+}
+
+.tiptap-editor strong {
+  font-weight: 700;
+}
+
+.tiptap-editor em {
+  font-style: italic;
+}
+
+.tiptap-editor a.custom-link {
+  color: var(--primary-color, #3b82f6);
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.tiptap-editor a.custom-link:hover {
+  color: #2563eb;
+}
+
+/* Prevent navigation in editable mode */
+.tiptap-editor:not([contenteditable="false"]) a.custom-link {
+  cursor: pointer;
+}
+
+/* Link in light theme */
+body[style*="background-color: rgb(255, 255, 255)"] .tiptap-editor a.custom-link {
+  color: #2563eb;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .tiptap-editor a.custom-link:hover {
+  color: #1d4ed8;
+}
+
+/* Placeholder */
+.tiptap-editor p.is-editor-empty:first-child::before {
+  color: #adb5bd;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Focus */
+.tiptap-editor:focus {
+  outline: none;
+}
+
+/* Selection - ensure text is visible when selected */
+.tiptap-editor ::selection {
+  background-color: #3b82f6;
+  color: #ffffff;
+}
+
+.tiptap-editor.dark-theme ::selection {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+/* Node View Wrappers */
+.card-node-view,
+.codegroup-node-view {
+  user-select: none;
+}
+
+.info-node-view {
+  user-select: text;
+}
+
+/* Info Block Content - Editable inline */
+.info-block-content {
+  outline: none;
+}
+
+/* Neutralize hljs classes inside info blocks - they should not be there */
+.info-block-content [class*="hljs-"],
+.info-block-content .hljs-title,
+.info-block-content .hljs-string,
+.info-block-content .hljs-function,
+.info-block-content .hljs-params,
+.info-block-content .hljs-keyword,
+.info-block-content .hljs-comment,
+.info-block-content .hljs-number,
+.info-block-content .hljs-literal,
+.info-block-content .hljs-variable,
+.info-block-content .hljs-built_in {
+  color: inherit !important;
+  background: none !important;
+  font-style: inherit !important;
+  font-weight: inherit !important;
+}
+
+.info-block-content p {
+  margin: 0 0 0.75rem 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: inherit;
+  font-weight: 400;
+}
+
+.info-block-content p:last-child {
+  margin-bottom: 0;
+}
+
+.info-block-content strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+.info-block-content em {
+  font-style: italic;
+}
+
+.info-block-content code {
+  background-color: rgba(0, 0, 0, 0.08);
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: 'JetBrainsMono', monospace;
+  font-weight: 500;
+}
+
+/* Dark theme code in info blocks */
+.tiptap-editor.dark-theme .info-block-content code {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.info-block-content h1,
+.info-block-content h2,
+.info-block-content h3 {
+  margin: 0.5rem 0;
+  font-weight: 600;
+  color: inherit;
+}
+
+.info-block-content h1 {
+  font-size: 1.5rem;
+}
+
+.info-block-content h2 {
+  font-size: 1.25rem;
+}
+
+.info-block-content h3 {
+  font-size: 1.1rem;
+}
+
+.info-block-content ul,
+.info-block-content ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.info-block-content li {
+  margin: 0.25rem 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: inherit;
+}
+
+/* Drag handle indicator */
+.tiptap-editor [draggable="true"] {
+  cursor: grab;
+}
+
+.tiptap-editor [draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Official Tiptap Drag Handle Styles */
+.tiptap-editor .ProseMirror {
+  position: relative;
+}
+
+/* Drag handle official styling */
+.drag-handle-official:hover {
+  background-color: #eff6ff !important;
+  border-color: #3b82f6 !important;
+  color: #3b82f6 !important;
+}
+
+.drag-handle-official:active {
+  cursor: grabbing !important;
+  background-color: #dbeafe !important;
+}
+
+/* Dragging state - Only show outline in editable mode */
+.ProseMirror.ProseMirror-focused .ProseMirror-selectednode {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Completely disable outline for selected nodes in preview/readonly mode */
+.ProseMirror:not(.ProseMirror-focused) .ProseMirror-selectednode {
+  outline: none !important;
+}
+
+/* Disable outline for code-group specifically */
+.code-group-wrapper.ProseMirror-selectednode,
+.code-group-wrapper.ProseMirror-selectednode > *,
+.code-group-wrapper.ProseMirror-selectednode * {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Also prevent focus outlines on code-group elements */
+.code-group-wrapper *:focus,
+.code-group-wrapper *:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Code block syntax highlighting styles */
+.code-block-syntax-highlight {
+  border-radius: calc(var(--radius) * 2) !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+.code-block-syntax-highlight pre {
+  margin: 0 !important;
+  padding: 1rem !important;
+  border-radius: calc(var(--radius) * 2) !important;
+  min-height: 100%;
+  white-space: pre !important;
+  overflow-x: auto !important;
+}
+
+.code-block-syntax-highlight code {
+  font-family: 'JetBrainsMono', 'Courier New', Courier, monospace !important;
+  white-space: pre !important;
+  word-wrap: normal !important;
+  overflow-wrap: normal !important;
+  font-weight: 500 !important;
+}
+
+.code-block-syntax-highlight code span {
+  font-weight: 500 !important;
+}
+
+.code-block-syntax-highlight code .line {
+  display: block !important;
+  white-space: pre !important;
+}
+
+/* Code group syntax highlighting styles */
+.code-group-syntax-highlight {
+  border-radius: var(--radius-xl) !important;
+  overflow: hidden !important;
+}
+
+.code-group-syntax-highlight pre {
+  background-color: #0a0f1c !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  min-height: 100%;
+}
+
+.code-group-syntax-highlight code {
+  font-family: 'JetBrainsMono', 'Courier New', Courier, monospace !important;
+  font-weight: 500 !important;
+}
+
+.code-group-syntax-highlight code span {
+  font-weight: 500 !important;
+}
+
+.is-dragging {
+  opacity: 0.4;
+}
+
+/* Drop cursor line */
+.ProseMirror-dropcursor {
+  border-top: 2px solid #3b82f6 !important;
+  margin-top: -1px;
+  margin-bottom: -1px;
+  pointer-events: none;
+}
+
+/* Label styles */
+span[data-label] {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+span[data-label]::before {
+  content: attr(data-label-text);
+}
+
+/* Light theme labels - black text */
+.tiptap-editor:not(.dark-theme) span[data-label] {
+  background-color: var(--label-color, #3b82f6);
+  color: #000000;
+  border: 1px solid var(--label-color, #3b82f6);
+}
+
+/* Dark theme labels - white text */
+.tiptap-editor.dark-theme span[data-label] {
+  background-color: var(--label-color, #3b82f6);
+  color: #ffffff;
+  border: 1px solid var(--label-color, #3b82f6);
+}
+
+/* Column Group container - target the wrapper div inside */
+.column-group-content-editable > div[data-node-view-wrapper],
+.column-group-content-preview > div[data-node-view-wrapper] {
+  display: flex !important;
+  gap: 16px !important;
+  width: 100% !important;
+}
+
+/* Column styles for ColumnGroup */
+.tiptap-editor [data-type="column"] {
+  flex: 1 !important;
+  min-width: 0 !important;
+  border-radius: var(--radius-lg) !important;
+  min-height: 60px !important;
+  transition: border-color 0.2s ease !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+}
+
+/* Make items inside columns share height equally and align across columns */
+.tiptap-editor [data-type="column"] > * {
+  flex: 1 !important;
+}
+
+.tiptap-editor [data-type="column"] > .card-node-view > div {
+  height: 100% !important;
+}
+
+.tiptap-editor [data-type="column"] > .card-node-view > div > div {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.tiptap-editor [data-type="column"] > .card-node-view > div > div > div:last-child {
+  flex: 1 !important;
+}
+
+/* Column borders - only in editable mode */
+.tiptap-editor:not([contenteditable="false"]) .column-group-content-editable [data-type="column"] {
+  border: 2px dashed #4b5563 !important;
+}
+
+.tiptap-editor:not([contenteditable="false"]) .column-group-content-editable [data-type="column"]:hover {
+  border-color: #6b7280 !important;
+}
+
+/* Light theme columns - only in editable mode */
+body[style*="background-color: rgb(255, 255, 255)"] .tiptap-editor:not([contenteditable="false"]) .column-group-content-editable [data-type="column"] {
+  border-color: #d1d5db !important;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .tiptap-editor:not([contenteditable="false"]) .column-group-content-editable [data-type="column"]:hover {
+  border-color: #9ca3af !important;
+}
+
+/* Right Panel styles - only in editable mode */
+.tiptap-editor:not([contenteditable="false"]) .right-panel-content-editable {
+  padding: 16px !important;
+  border-radius: var(--radius-lg) !important;
+  min-height: 120px !important;
+  transition: border-color 0.2s ease !important;
+  border: 2px dashed #4b5563 !important;
+}
+
+.tiptap-editor:not([contenteditable="false"]) .right-panel-content-editable:hover {
+  border-color: #6b7280 !important;
+}
+
+/* Light theme right panel - only in editable mode */
+body[style*="background-color: rgb(255, 255, 255)"] .tiptap-editor:not([contenteditable="false"]) .right-panel-content-editable {
+  border-color: #d1d5db !important;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .tiptap-editor:not([contenteditable="false"]) .right-panel-content-editable:hover {
+  border-color: #9ca3af !important;
+}
+
+/* Syntax highlighting for code blocks */
+.hljs-comment,
+.hljs-quote {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst {
+  color: #c678dd;
+  font-weight: normal;
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag .hljs-attr {
+  color: #d19a66;
+}
+
+.hljs-string,
+.hljs-doctag {
+  color: #98c379;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-selector-id {
+  color: #e06c75;
+  font-weight: normal;
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #e5c07b;
+  font-weight: normal;
+}
+
+.hljs-tag,
+.hljs-name,
+.hljs-attribute {
+  color: #e06c75;
+  font-weight: normal;
+}
+
+.hljs-regexp,
+.hljs-link {
+  color: #56b6c2;
+}
+
+.hljs-symbol,
+.hljs-bullet {
+  color: #61aeee;
+}
+
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #56b6c2;
+}
+
+.hljs-meta {
+  color: #61aeee;
+}
+
+.hljs-deletion {
+  color: #e06c75;
+}
+
+.hljs-addition {
+  color: #98c379;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+/* Light theme syntax highlighting */
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-comment,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-quote {
+  color: #6a737d;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-keyword,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-selector-tag,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-subst {
+  color: #d73a49;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-number,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-literal,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-variable,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-template-variable,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-tag .hljs-attr {
+  color: #005cc5;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-string,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-doctag {
+  color: #032f62;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-title,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-section,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-selector-id {
+  color: #6f42c1;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-type,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-class .hljs-title {
+  color: #e36209;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-tag,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-name,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-attribute {
+  color: #22863a;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-regexp,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-link {
+  color: #032f62;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-symbol,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-bullet {
+  color: #005cc5;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-built_in,
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-builtin-name {
+  color: #005cc5;
+}
+
+body[style*="background-color: rgb(255, 255, 255)"] .hljs-meta {
+  color: #005cc5;
+}
+
+/* Pulse animation for loading skeletons */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+
+/* Code Editor Styles (Visual/Code toggle) */
+.code-editor-textarea,
+.code-editor-pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  white-space: pre-wrap !important;
+  word-break: keep-all !important;
+  tab-size: 2 !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+.code-editor-textarea {
+  outline: none !important;
+  border: none !important;
+  caret-color: #3b82f6 !important;
+  color: transparent !important;
+  resize: none !important;
+  overflow: hidden !important;
+}
+
+/* Dark theme cursor */
+.dark-code-editor .code-editor-textarea {
+  caret-color: #60a5fa !important;
+}
+
+.code-editor-textarea::selection {
+  background: rgba(59, 130, 246, 0.3) !important;
+  color: transparent !important;
+}
+
+.code-editor-textarea:focus {
+  outline: none !important;
+}
+
+/* Shiki code highlighting overrides */
+.code-editor-pre code {
+  background: transparent !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+
+.code-editor-pre .line {
+  display: inline;
+}
+
+/* Allow word wrapping in code editor */
+.code-editor-textarea,
+.code-editor-pre {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Code editor textarea */
+.code-editor-textarea {
+  text-indent: 0 !important;
+}
+
+.tiptap {
+  :first-child {
+    margin-top: 0;
+  }
+
+  [data-type='emoji'] {
+    display: inline-block;
+    height: fit-content;
+    width: fit-content;
+    transform: translateY(20%);
+
+    img {
+      height: 1.3em;
+      width: 1.3em;
+    }
+  }
+}
+
+/* ---------- Narrow-container content safety ----------
+   When the article column is narrow (mobile/tablet device frames in
+   the preview, or real phones), individual MDX components with a
+   wide intrinsic min-content can bleed past the frame edge. These
+   rules keep them inside their parent — tables get their own
+   horizontal scroll, code blocks wrap or scroll, images can't
+   exceed the container, etc. */
+.tiptap-editor img,
+.prose-mimic img {
+  max-width: 100%;
+  height: auto;
+}
+.tiptap-editor table,
+.prose-mimic table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tiptap-editor pre,
+.prose-mimic pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tiptap-editor svg,
+.prose-mimic svg {
+  max-width: 100%;
+  height: auto;
+}
+.tiptap-editor .mermaid,
+.prose-mimic .mermaid {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* ---------- Small-screen layout safety (POC parity) ----------
+   The SSG hides the RightPanel rail and collapses the changelog
+   two-column layout on narrow viewports. The dashboard reuses the
+   same `.right-panel-rail` and `.cl-entry` classes, so we mirror
+   those rules here — JS gating already exists but it keys off
+   `window.innerWidth`, which doesn't shrink when the user switches
+   the preview's device frame. These media queries catch real
+   small-window cases and act as belt-and-suspenders for the JS path. */
+.right-panel-rail {
+  display: none;
+}
+@media (min-width: 1440px) {
+  .right-panel-rail {
+    display: block;
+  }
+}
+
+/* Changelog entries: the SSG renders each entry as a two-column
+   grid (160px sticky aside + content). Below 768px the 160px aside
+   forces the article wider than the viewport, so we collapse to a
+   single stacked column. Mirrors publish-content.css `.cl-entry`
+   rules in publish-web. */
+@media (max-width: 767px) {
+  .cl-entry {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0.75rem !important;
+    padding: 1.25rem 0 !important;
+  }
+  .cl-entry__aside {
+    position: static !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+}
+

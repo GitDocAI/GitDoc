@@ -1,0 +1,183 @@
+---
+/**
+ * Floating AI chat bar — opt-in via `assistant.floating: true` in the
+ * manifest. Sits at the bottom of the viewport, horizontally centered,
+ * always visible while scrolling. Hides automatically when the page
+ * footer enters view (so it doesn't fight for attention there).
+ *
+ * Clicking the pill opens the same [data-assistant-panel] — single
+ * conversation surface, two entry points (the navbar Ask AI pill and
+ * this floating bar).
+ */
+---
+
+<div
+  class="assistant-floating"
+  data-assistant-floating
+  aria-hidden="false"
+>
+  <form class="assistant-floating__pill" data-assistant-floating-form>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class="assistant-floating__icon"
+      aria-hidden="true"
+    >
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+      <path d="M5 3v4"/>
+      <path d="M3 5h4"/>
+      <path d="M19 17v4"/>
+      <path d="M17 19h4"/>
+    </svg>
+    <input
+      type="text"
+      class="assistant-floating__input"
+      placeholder="Ask AI a question…"
+      aria-label="Ask AI a question"
+      data-assistant-floating-input
+    />
+    <button
+      type="submit"
+      class="assistant-floating__send"
+      aria-label="Send"
+      title="Send"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 19V5"/>
+        <path d="m5 12 7-7 7 7"/>
+      </svg>
+    </button>
+  </form>
+</div>
+
+<script>
+  /* Hide the floating bar when the footer scrolls into view — keeps
+     the footer's links/copyright unobstructed. Re-binds on
+     `astro:page-load` so each navigation finds the new page's
+     `.static-footer` element. */
+  function wireFloating() {
+    const bar = document.querySelector<HTMLElement>('[data-assistant-floating]')
+    if (!bar) return
+    const footer = document.querySelector<HTMLElement>('.static-footer')
+    if (!footer) {
+      bar.setAttribute('data-visible', 'true')
+      return
+    }
+
+    /* `data-page-scroll` is the page-level scroll container the route
+       layout marks. IntersectionObserver against it (not the window)
+       fires reliably even when the body itself doesn't scroll. */
+    const scrollRoot =
+      document.querySelector<HTMLElement>('[data-page-scroll]') ?? null
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          /* Visible = some part of the footer is in the viewport. */
+          bar.setAttribute('data-visible', entry.isIntersecting ? 'false' : 'true')
+        }
+      },
+      { root: scrollRoot, threshold: 0 },
+    )
+    obs.observe(footer)
+    bar.setAttribute('data-visible', 'true')
+  }
+
+  wireFloating()
+  document.addEventListener('astro:page-load', wireFloating)
+</script>
+
+<style>
+  .assistant-floating {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      transform 220ms cubic-bezier(0.25, 0.1, 0.25, 1),
+      opacity 220ms ease;
+    width: min(560px, calc(100vw - 32px));
+  }
+  .assistant-floating[data-visible="true"] {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .assistant-floating__pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 8px 8px 14px;
+    background: var(--background);
+    color: var(--foreground);
+    border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+    border-radius: 9999px;
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--foreground) 8%, transparent),
+      0 12px 32px color-mix(in srgb, var(--foreground) 12%, transparent);
+    font: inherit;
+    font-size: 14px;
+    transition:
+      border-color 0.15s,
+      background-color 0.15s;
+  }
+  .assistant-floating__pill:focus-within {
+    border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+
+  .assistant-floating__icon {
+    color: var(--primary);
+    flex-shrink: 0;
+  }
+  .assistant-floating__input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--foreground);
+    font: inherit;
+    font-size: 14px;
+    outline: none;
+    padding: 4px 0;
+  }
+  .assistant-floating__input::placeholder {
+    color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+  }
+
+  .assistant-floating__send {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 9999px;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .assistant-floating__send:hover { opacity: 0.9; }
+  .assistant-floating__send:active { transform: scale(0.95); }
+
+  /* iOS Safari auto-zooms when a focused field is < 16px. Bump to 16px
+     on mobile so tapping the field doesn't zoom the page (and trap the
+     user). Desktop keeps the tighter 14px. */
+  @media (max-width: 1023px) {
+    .assistant-floating__input {
+      font-size: 16px;
+    }
+  }
+</style>

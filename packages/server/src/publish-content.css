@@ -1,0 +1,959 @@
+/*
+ * Styles for the publish-side HTML emitted by render-cli (BEM classes
+ * like info-block, card-block, accordion-block). The editor uses its
+ * own classes inside tiptap.css; this file is the rendered/static
+ * counterpart consumed by readers.
+ */
+
+.doc-article {
+  font-family: var(--font-sans);
+  color: var(--content-text);
+  line-height: 1.65;
+  font-size: 15px;
+  /* Long unbreakable strings (URLs, identifiers) break only when
+     they would otherwise overflow the column. Plain text wraps at
+     spaces as usual. Don't combine with `min-width: 0` on the
+     article itself — that triggers per-character wrapping. */
+  overflow-wrap: break-word;
+}
+
+/* Embeds, video, and iframes never exceed the article column. The
+   `max-w-4xl` on the article caps the column itself; this caps the
+   embed inside. */
+.doc-article iframe,
+.doc-article video,
+.doc-article embed,
+.doc-article object,
+.doc-article canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Catch-all: any direct child of the article column can't push the
+   column wider than the viewport. Handles the "I dropped a wide
+   custom HTML block in here" case. Tables, code blocks, mermaid,
+   etc. already self-scroll via their own overflow rules. */
+.doc-article > * {
+  max-width: 100%;
+}
+
+/* Card hover — only the linkable variant (CardPresenter renders an
+   <a class="card-presenter"> when href is set). Mirrors the same
+   rule in dashboard-web/src/app/styles/index.css so editor + preview
+   + publish all behave identically. */
+.doc-article a.card-presenter:hover {
+  border-color: var(--primary) !important;
+}
+
+/* Code block shell — wraps the Shiki-highlighted <pre> with a copy
+   button in the corner. Wiring happens in /code-copy.js. */
+.code-block-shell {
+  position: relative;
+  margin: 1rem 0;
+}
+/* Right rail is narrow — tightening shell margins helps the
+   embedded code blocks fit without horizontal scroll. */
+.right-panel-rail .code-block-shell { margin: 0.75rem 0; }
+.right-panel-rail .tabs-block { margin: 0.75rem 0; }
+.code-block-shell pre {
+  margin: 0;
+  border-radius: var(--radius-lg);
+  /* Shiki emits no padding itself — we own all four sides here.
+     The right side is wider (3rem) to reserve room for the copy
+     button in the corner so it never overlaps real code. */
+  padding: 1rem 3rem 1rem 1rem;
+  overflow-x: auto;
+  /* Shiki adds `tabindex="0"` to the <pre> so screen readers can
+     focus the code region. The browser default outline drew a
+     bright primary-colored ring around every block; tone it down
+     to a subtle ring that only shows for keyboard focus. */
+  outline: none;
+}
+.code-block-shell pre:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  outline-offset: 2px;
+}
+.code-block__copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  color: color-mix(in srgb, var(--foreground) 65%, var(--background) 35%);
+  cursor: pointer;
+  /* Always visible at a subtle 0.55 opacity, full opacity on hover
+     of the shell. Mirrors the dashboard's copy-button discoverability
+     (the user always sees there's something to click). */
+  opacity: 0.55;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  z-index: 1;
+}
+.code-block-shell:hover .code-block__copy,
+.code-block__copy:hover,
+.code-block__copy:focus-visible {
+  opacity: 1;
+}
+.code-block__copy:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, var(--background));
+}
+.code-block__check-icon { display: none; }
+.code-block__copy.is-copied { color: #10b981; opacity: 1; }
+.code-block__copy.is-copied .code-block__copy-icon { display: none; }
+.code-block__copy.is-copied .code-block__check-icon { display: block; }
+
+/* Code block background — Shiki injects an opaque bg (the highlight
+   theme's bg) inline on <pre>, and previously a `html.dark` rule
+   swapped it for `--shiki-dark-bg`. Both were solid colors that
+   ignored the page bg. Force the same semi-transparent foreground
+   tint we use for tables/callouts/mermaid so the block blends with
+   whatever bg the manifest paints (including the teal-tinted Mist
+   bg). `!important` is needed to win over Shiki's inline style. */
+.tiptap-editor pre.shiki,
+.tiptap-editor .shiki,
+.tiptap-editor pre.shiki code,
+.tiptap-editor .shiki code {
+  background-color: color-mix(in srgb, var(--foreground) 4%, transparent) !important;
+}
+
+/* Shiki dual-theme swap — with `defaultColor: false` shiki emits
+   BOTH `--shiki-light` and `--shiki-dark` custom props on every span
+   and no inline `color`, so the consumer must pick. The article
+   HTML is wrapped in `<div class="tiptap-editor prose-mimic">`, and
+   `packages/ui/src/components/editor/tiptap.css` already targets
+   `.tiptap-editor .shiki code span` for the LIGHT theme; its
+   selector specificity (0,0,2,3) beat a simpler `html.dark .shiki
+   span` (0,0,2,2). We match the same chain so dark mode wins. */
+html.dark .tiptap-editor pre.shiki span,
+html.dark .tiptap-editor .shiki span,
+html.dark .tiptap-editor pre.shiki code span,
+html.dark .tiptap-editor .shiki code span {
+  color: var(--shiki-dark) !important;
+  background-color: transparent !important;
+}
+
+/* Horizontal rule — matches the editor's hr style (single thin line)
+   but uses the theme's border color instead of the editor's
+   hardcoded #e5e7eb so it adapts to dark mode. Without this rule the
+   browser default (`inset` 2-3px) looked chunky vs the dashboard. */
+.doc-article hr {
+  border: none;
+  border-top: 1px solid var(--chrome-border);
+  margin: 2rem 0;
+}
+
+/* Right rail — populated by `<RightPanel>` content extracted from
+   the article body. Replaces the TOC when present. Mirrors the TOC's
+   sticky positioning so it stays beside the content on long pages. */
+.right-panel-rail {
+  /* Wider than the regular TOC (200px) — `<RightPanel>` typically
+     holds rich content like code blocks or call-out cards, not
+     just text links, so it needs more breathing room. */
+  width: 360px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 32px;
+  max-height: calc(100vh - 64px);
+  align-self: flex-start;
+  padding-left: 16px;
+  overflow-y: auto;
+  /* `display: none` (not `visibility: hidden`) so the 360px slot
+     isn't reserved in the flex layout below 1440px — otherwise it
+     squeezes the article and breaks the page on phones. */
+  display: none;
+}
+@media (min-width: 1440px) {
+  .right-panel-rail { display: block; }
+}
+.right-panel-rail .right-panel {
+  /* Shrinking the font (e.g. 0.92em) cascaded into nested code
+     blocks and made them illegible. Keep the natural article size;
+     the right-rail context already reads as "side content" via
+     position + width alone. */
+  line-height: 1.55;
+  color: var(--content-text);
+}
+.right-panel-rail .right-panel > *:first-child { margin-top: 0; }
+.right-panel-rail .right-panel > *:last-child { margin-bottom: 0; }
+
+.doc-article > * + * {
+  margin-top: 1.1em;
+}
+
+.doc-article h1,
+.doc-article h2,
+.doc-article h3,
+.doc-article h4 {
+  /* Heading-only font override. Defaults to var(--font-sans) when
+     the manifest doesn't set theme.heading_font (most themes
+     share body+heading). */
+  font-family: var(--font-heading, var(--font-sans));
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 2.2em;
+  margin-bottom: 0.6em;
+  letter-spacing: -0.01em;
+  /* All headings share the same muted slate tone as bold (80/20
+     mix toward bg). Hierarchy comes from font-size + weight, not
+     color — matches publish-web's screenshot perception. */
+  color: color-mix(in srgb, var(--foreground) 90%, var(--background) 10%);
+}
+
+.doc-article h1 { font-size: 2rem; }
+.doc-article h2 { font-size: 1.5rem; }
+.doc-article h3 { font-size: 1.2rem; }
+.doc-article h4 { font-size: 1rem; }
+
+.doc-article h1:first-child,
+.doc-article h2:first-child { margin-top: 0; }
+
+/* Leave breathing room when a TOC click scrolls a heading into
+   view — otherwise it lands flush against the top of the scroll
+   container. */
+.doc-article h1,
+.doc-article h2,
+.doc-article h3 { scroll-margin-top: 24px; }
+
+/* Bold reads with the body text color (same slate-gray rhythm);
+   headings stay at full --foreground via the rule above, so the
+   visual hierarchy is heading → body/bold, with headings the most
+   prominent and body+bold sharing the muted tone. */
+.doc-article strong, .doc-article b {
+  color: color-mix(in srgb, var(--foreground) 90%, var(--background) 10%);
+  font-weight: 600;
+}
+
+.doc-article p { margin: 0; }
+.doc-article a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.doc-article a:hover { text-decoration: none; }
+
+.doc-article ul,
+.doc-article ol {
+  padding-left: 1.4em;
+  margin: 0;
+}
+.doc-article li + li { margin-top: 0.4em; }
+.doc-article li > p:not(:first-child) { margin-top: 0.4em; }
+
+.doc-article code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.doc-article pre {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 1em 1.2em;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  margin: 0;
+}
+.doc-article pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  /* Theme-aware text color for non-highlighted (raw) code blocks. The
+     render-cli doesn't run Shiki, so blocks have no per-token colors —
+     without this they inherit tiptap.css's hardcoded light-on-dark
+     (#f3f4f6), which is invisible on the light code-block background. */
+  color: var(--foreground);
+}
+
+.doc-article img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  margin: 0.5em 0;
+}
+
+.doc-article blockquote {
+  border-left: 3px solid var(--primary);
+  padding-left: 1em;
+  color: var(--content-text);
+  font-style: italic;
+}
+
+/* ---------- callouts (info / tip / note / warning / danger) ---------- */
+
+/* Structure shared by every variant — palette comes from the
+   per-variant rule blocks below via five CSS vars:
+   --callout-color   → icon + accent stroke
+   --callout-bg      → soft fill (same in light/dark)
+   --callout-border  → ring color (slightly stronger in light)
+   --callout-text    → body paragraph color (variant-tinted)
+   --callout-title   → headings + strong color (deeper variant tint) */
+.callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 1rem 0;
+  padding: 14px 16px;
+  border: 1px solid var(--callout-border);
+  border-radius: var(--radius-lg);
+  background: var(--callout-bg);
+  color: var(--callout-text);
+}
+.callout__icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--callout-color);
+  opacity: 0.9;
+}
+.callout__body {
+  flex: 1;
+  min-width: 0;
+  color: var(--callout-text);
+}
+.callout__body > *:first-child { margin-top: 0; }
+.callout__body > *:last-child  { margin-bottom: 0; }
+/* Headings + emphasis pick up the deeper tint so the "title" of a
+   callout reads stronger than its body — same trick publish-web's
+   InfoBlockNodeView pulls via its injected <style> block. */
+.callout__body h1,
+.callout__body h2,
+.callout__body h3,
+.callout__body h4,
+.callout__body h5,
+.callout__body h6,
+.callout__body strong,
+.callout__body b {
+  color: var(--callout-title);
+}
+/* Inline code inside a callout shouldn't carry the article's
+   muted bg — match the callout's accent tint instead so it
+   reads as part of the callout, not a stray chip. */
+.callout__body code {
+  background: color-mix(in srgb, var(--callout-color) 14%, transparent);
+  color: inherit;
+}
+
+/* ---- Dark palette (defaults — matches publish-web's dark branch
+   in InfoBlockNodeView's getTypeConfig). body=light-gray-ish for
+   all variants, headings pick the pale tint of the variant. */
+.callout--info {
+  --callout-color: #93c5fd;
+  --callout-bg: rgba(59, 130, 246, 0.08);
+  --callout-border: rgba(59, 130, 246, 0.25);
+  --callout-text: rgba(229, 231, 235, 0.9);
+  --callout-title: #dbeafe;
+}
+.callout--tip {
+  --callout-color: #6ee7b7;
+  --callout-bg: rgba(16, 185, 129, 0.08);
+  --callout-border: rgba(16, 185, 129, 0.25);
+  --callout-text: rgba(229, 231, 235, 0.9);
+  --callout-title: #d1fae5;
+}
+.callout--note {
+  --callout-color: #a5b4fc;
+  --callout-bg: rgba(99, 102, 241, 0.08);
+  --callout-border: rgba(99, 102, 241, 0.25);
+  --callout-text: rgba(229, 231, 235, 0.9);
+  --callout-title: #e0e7ff;
+}
+.callout--warning {
+  --callout-color: #fcd34d;
+  --callout-bg: rgba(245, 158, 11, 0.08);
+  --callout-border: rgba(245, 158, 11, 0.25);
+  --callout-text: rgba(229, 231, 235, 0.9);
+  --callout-title: #fef3c7;
+}
+.callout--danger {
+  --callout-color: #fca5a5;
+  --callout-bg: rgba(239, 68, 68, 0.08);
+  --callout-border: rgba(239, 68, 68, 0.25);
+  --callout-text: rgba(229, 231, 235, 0.9);
+  --callout-title: #fee2e2;
+}
+
+/* ---- Light overrides — darker icon stroke + slightly stronger
+   border (0.30 alpha vs 0.25). bg stays the same since the soft
+   tint reads fine on both backgrounds. body+title are the deep
+   variant tints publish-web uses in light mode. */
+:root:not(.dark) .callout--info {
+  --callout-color: #3b82f6;
+  --callout-border: rgba(59, 130, 246, 0.3);
+  --callout-text: #1e3a8a;
+  --callout-title: #1d4ed8;
+}
+:root:not(.dark) .callout--tip {
+  --callout-color: #10b981;
+  --callout-border: rgba(16, 185, 129, 0.3);
+  --callout-text: #065f46;
+  --callout-title: #047857;
+}
+:root:not(.dark) .callout--note {
+  --callout-color: #6366f1;
+  --callout-border: rgba(99, 102, 241, 0.3);
+  --callout-text: #312e81;
+  --callout-title: #4338ca;
+}
+:root:not(.dark) .callout--warning {
+  --callout-color: #f59e0b;
+  --callout-border: rgba(245, 158, 11, 0.3);
+  --callout-text: #78350f;
+  --callout-title: #b45309;
+}
+:root:not(.dark) .callout--danger {
+  --callout-color: #ef4444;
+  --callout-border: rgba(239, 68, 68, 0.3);
+  --callout-text: #7f1d1d;
+  --callout-title: #b91c1c;
+}
+
+/* ---------- card-block ---------- */
+
+.card-block {
+  display: block;
+  padding: 1em 1.2em;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 150ms, background 150ms;
+}
+.card-block[data-href] { cursor: pointer; }
+.card-block[data-href]:hover {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 5%, var(--card));
+}
+.card-block__title {
+  font-weight: 600;
+  font-size: 1.05em;
+  margin-bottom: 0.3em;
+  color: var(--foreground);
+}
+.card-block__body p { margin: 0; }
+.card-block__body p + p { margin-top: 0.5em; }
+.card-block__body { color: var(--muted-foreground); }
+
+/* ---------- columns ---------- */
+
+/* `.columns-block` is a CSS grid (one cell per column) with a gap BETWEEN
+   columns only; each `.column` then stacks its own blocks. Without an
+   explicit gap the stacked cards touch — the `.card-block + .card-block`
+   margin never fired because published cards are `.card-presenter`, not
+   `.card-block`. So give the column its own vertical gap.
+
+   NOTE: don't add `flex: 1` to the cards to equalize heights here. The
+   column cell has no definite height in the grid, so `flex-basis: 0` makes
+   the items collapse (circular sizing) and the cards vanish. Cards stay at
+   their natural height; cross-column row alignment isn't attempted. */
+.doc-article .columns-block .column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+/* ---------- accordion ---------- */
+
+/* Mirrors publish-web's AccordionTabNodeView read-only chrome. Each
+   tab is a separate rounded card (gap between, not a unified
+   table). <details>/<summary> gives the open/close interaction
+   for free — `open` ships from the parser's `isActive`. The
+   dashboard's `multiple={false}` exclusive-open mode is *not*
+   wired here (would need a JS island); multiple tabs may stay
+   open at once on the static site. */
+.accordion {
+  margin: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.accordion__tab {
+  border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.accordion__tab:hover {
+  border-color: color-mix(in srgb, var(--foreground) 15%, transparent);
+}
+.accordion__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+/* Hide the UA disclosure markers (chevron supplied as inline SVG
+   below so we can rotate it on open). */
+.accordion__header::-webkit-details-marker { display: none; }
+.accordion__header::marker { content: ''; }
+
+.accordion__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1.1rem;
+  color: var(--primary);
+}
+.accordion__icon > i { line-height: 1; }
+
+.accordion__title {
+  flex: 1;
+  min-width: 0;
+}
+.accordion__tab[open] .accordion__title { font-weight: 600; }
+
+.accordion__chevron {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--foreground) 60%, var(--background) 40%);
+  transition: transform 0.2s ease;
+}
+.accordion__tab[open] .accordion__chevron { transform: rotate(180deg); }
+
+.accordion__tab[open] .accordion__header {
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.accordion__body {
+  padding: 1rem 1.25rem;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.accordion__body > *:first-child { margin-top: 0; }
+.accordion__body > *:last-child  { margin-bottom: 0; }
+
+/* ---------- steps ---------- */
+
+/* Mirrors publish-web's StepsNodeView + StepNodeView. Walker emits
+   the step index already, so no CSS counters needed.
+   Each rule is qualified by `.steps` so it outranks tiptap-editor's
+   generic `.tiptap-editor ol li { display: list-item; … }` reset
+   that the article inherits. Without the qualifier the step <li>'s
+   `display: flex` loses to that 0,1,2-specific rule and the body
+   collapses below the gutter, cutting through the connector line. */
+.doc-article .steps,
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+.doc-article .steps > li::marker { content: ''; }
+.steps .step {
+  display: flex;
+  gap: 16px;
+  padding: 16px 0;
+  position: relative;
+  /* Reset tiptap-editor's `li { padding-left, margin-bottom, … }`
+     so the gutter/body alignment isn't shifted. */
+  margin: 0;
+  padding-left: 0;
+  line-height: inherit;
+}
+
+/* Gutter: numbered circle + connector line that fills the rest of
+   the step's height. The circle stays on top, the line stretches
+   to align with the next step's circle. */
+.steps .step__gutter {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+}
+.steps .step__number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  z-index: 1;
+}
+.steps .step__line {
+  flex: 1;
+  width: 1px;
+  min-height: 20px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+/* Body */
+.steps .step__body {
+  flex: 1;
+  min-width: 0;
+}
+/* `.doc-article h4` adds a 2.2em top margin + uppercase tint — none
+   of which we want for a step title. Override at higher specificity
+   (two classes beat the article's one-class-one-tag rule). */
+.doc-article .step__title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: var(--foreground);
+}
+.step__content {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.step__content > *:first-child { margin-top: 0; }
+.step__content > *:last-child  { margin-bottom: 0; }
+
+/* ---------- tabs-block (matches dashboard TabsNodeView) ---------- */
+
+/* Tabs-block visual mirrors `packages/ui/src/components/editor/
+   node-views/TabsNodeView.tsx`: 1px outer border with the dashboard's
+   `calc(var(--radius) * 2)` radius, header strip with accent-underline
+   on the active tab, and only the active body visible. The actual
+   click-to-switch behavior is in /tabs.js (loaded from BaseLayout). */
+.tabs-block {
+  margin: 1rem 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: calc(var(--radius) * 2);
+  overflow: hidden;
+}
+.tabs-block__headers {
+  display: flex;
+  padding: 12px 16px 0;
+  background: transparent;
+  /* Many tabs in a row overflow the article width — scroll horizontally
+     inside the header strip rather than blowing out the parent layout.
+     A thin visible scrollbar tells the reader there's more content; the
+     fully-hidden variant we shipped first looked clean but left users
+     stranded when CodeGroups had 6+ tabs. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent;
+}
+.tabs-block__headers::-webkit-scrollbar { height: 6px; }
+.tabs-block__headers::-webkit-scrollbar-track { background: transparent; }
+.tabs-block__headers::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+  border-radius: 3px;
+}
+.tabs-block__headers::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground) 36%, transparent);
+}
+.tabs-block__header {
+  background: transparent;
+  border: none;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--foreground) 50%, var(--background) 50%);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  user-select: none;
+  transition: color 0.15s ease;
+  white-space: nowrap;
+  /* Keep each tab at its natural width so a long row overflows the header
+     strip and triggers its `overflow-x: auto` scroll — without this the
+     flex items shrink to fit and the strip never scrolls (cramped tabs,
+     no scroll) when a code group has many code blocks. */
+  flex-shrink: 0;
+}
+.tabs-block__header:hover { color: var(--foreground); }
+.tabs-block__header.is-active {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.tabs-block__icon { display: inline-flex; align-items: center; color: var(--primary); }
+.tabs-block__indicator {
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.tabs-block__header.is-active .tabs-block__indicator { opacity: 1; }
+.tabs-block__body { padding: 16px; }
+.tabs-block__body > *:first-child { margin-top: 0; }
+.tabs-block__body > *:last-child { margin-bottom: 0; }
+
+/* ---------- changelog-block / update-entry (POC simple) ----------
+   No rail, no dots, no sticky aside. Each entry is a self-contained
+   vertical card with a primary-colored label badge at the top. */
+
+.changelog-block {
+  display: block;
+  margin: 1rem 0;
+}
+.changelog-block__header {
+  margin-bottom: 3rem;
+}
+.changelog-block__title {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.875rem, 3vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+.changelog-block__description {
+  margin: 0;
+  font-size: 1rem;
+  max-width: 42rem;
+  color: color-mix(in srgb, var(--foreground) 60%, var(--background) 40%);
+}
+
+.changelog-block__entries {
+  display: flex;
+  flex-direction: column;
+}
+
+/* SSG changelog entry — `.cl-entry` prefix (NOT `.update-*`) to
+   escape Update.css from the dashboard, whose !important rules
+   would otherwise hide the aside and force 5rem padding. */
+.cl-entry {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 2.5rem;
+  padding: 2rem 0;
+}
+/* Mobile collapses the two-column changelog into a single stacked
+   column — the 160px sticky aside is too wide for narrow viewports
+   and was forcing the whole article column wider than the page. */
+@media (max-width: 767px) {
+  .cl-entry {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 1.25rem 0;
+  }
+}
+.cl-entry:first-child {
+  padding-top: 0;
+}
+.cl-entry:last-child {
+  padding-bottom: 0;
+}
+
+.cl-entry__aside {
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  position: sticky;
+  top: 2rem;
+}
+@media (max-width: 767px) {
+  .cl-entry__aside {
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}
+
+.cl-entry__label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.7rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.cl-entry__tags {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.cl-entry__tag {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--foreground) 60%, var(--background) 40%);
+}
+
+/* Override the generic .doc-article h3 rule which adds
+   margin-top: 2.2em — that pushed the title way below the aside
+   label and broke their alignment. */
+.doc-article .cl-entry__title,
+.cl-entry__title {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+.cl-entry__body { min-width: 0; }
+.cl-entry__content { font-size: 15px; line-height: 1.7; word-wrap: break-word; }
+.cl-entry__content > *:first-child { margin-top: 0; }
+.cl-entry__content > *:last-child { margin-bottom: 0; }
+
+.cl-entry__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+}
+.cl-entry__footer a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.cl-entry__footer a:hover { color: var(--foreground); }
+
+@media (max-width: 640px) {
+  .cl-entry {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 2rem 0;
+  }
+  .cl-entry__aside {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .cl-entry__tags { flex-direction: row; gap: 0.75rem; }
+}
+
+/* ---------- table-block ---------- */
+
+/* Wrapper handles horizontal overflow so wide tables don't push
+   the article column. The actual <table> is semantic HTML — no
+   sortable/filterable in the static build (those need JS). */
+.table-block {
+  /* `display: block; width: 100%` forces the wrapper to fill the
+     article column. Without them, `.prose-mimic table { display: block }`
+     in tiptap.css coupled with the inner table's `min-width: max-content`
+     was letting the wrapper shrink-to-fit the table's content width,
+     leaving an empty strip on the right of narrow tables. */
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  max-width: 100%;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+/* Higher-specificity override to beat `.prose-mimic table { display: block }`
+   from packages/ui/tiptap.css (shared between dashboard + POC). On the
+   published POC we want a real CSS table that fills its wrapper — the
+   `display: block` variant was needed in the editor for selection /
+   cursor reasons but breaks the row-separator-to-edge look here.
+   The wrapper's `overflow-x: auto` still handles tables wider than
+   the column. */
+.prose-mimic .table-block table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.table-block thead {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.table-block th,
+.table-block td {
+  padding: 0.75em 1em;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.table-block th {
+  font-weight: 600;
+  color: var(--foreground);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.table-block td { color: var(--content-text); }
+/* Last row: no bottom border so the rounded corner of the
+   wrapper isn't fighting a stray line underneath. */
+.table-block tbody tr:last-child > td { border-bottom: none; }
+/* Subtle zebra striping — helps row scanning on long tables. */
+.table-block tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--foreground) 2%, transparent);
+}
+
+/* ---------- Article spacing reset for cards/accordions stacked ---------- */
+
+.doc-article .callout + .callout,
+.doc-article .card-block + .card-block { margin-top: 0.8em; }
+
+/* ---------- mermaid-block ---------- */
+
+/* Mirrors publish-web's MermaidNodeView display-mode wrapper:
+   subtle bordered card + a flex/justify-center inner container
+   that lets mermaid's `useMaxWidth: true` do its own responsive
+   sizing. No width overrides on the svg — those caused the
+   "extremadamente chiquito" rendering when we used the wrong
+   flex axis (align-items vs justify-content). */
+.mermaid-block {
+  margin: 0;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  min-height: 100px;
+}
+.mermaid-block pre.mermaid {
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--muted-foreground);
+  white-space: pre;
+}
+.mermaid-block pre.mermaid[data-mermaid-rendered] {
+  /* Mermaid replaces the <pre>'s textContent with an <svg> — drop
+     the pre's monospace/whitespace styling so the svg lays out
+     naturally instead of being treated like preformatted text. */
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  white-space: normal;
+}
+.mermaid-block figcaption {
+  font-size: 0.85em;
+  color: var(--muted-foreground);
+}

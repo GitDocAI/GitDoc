@@ -1,0 +1,11 @@
+node_modules/
+dist/
+engine/
+.astro/
+*.log
+.DS_Store
+
+# local configuration, never commit
+.env
+.env.*
+!.env.example
