@@ -1226,3 +1226,20 @@ test('ingestion: a server that restarts over unindexed data ingests it at startu
   assert.ok(existsSync(index), 'indexed without any search or publish')
   assert.equal((await search(again.port, 'boot.localhost', 'docker')).results[0].path, '/guides/deploy')
 })
+
+test('sessions: the public and admin servers agree on one key, and sessions survive a restart', async () => {
+  const first = await startServer({ env: { ADMIN_PASSWORD: 'preset admin password' } })
+  // Both processes touch the key at about the same time (admin session + site session).
+  await publish(first.port, makeSite({ name: 'Keyed', pages: DOCS }), 'keyed.localhost')
+  await putSettings(first.port, 'keyed.localhost', { auth: { enabled: true, providers: [{ id: 'p', type: 'password', password: 'persistent secret 1' }] } })
+  const adminLogin = await adminJson(first.port, '/admin/api/login', { method: 'POST', body: { password: 'preset admin password' } })
+  const login = await post(first.port, 'keyed.localhost', '/api/auth/password', { password: 'persistent secret 1' })
+  const siteCookie = (login.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
+  const adminCookie = cookieHeader(adminLogin)
+  first.stop()
+
+  // A restart over the same data: nobody is signed out.
+  const again = await startServer({ env: { DATA_DIR: first.data, ADMIN_PASSWORD: 'preset admin password' } })
+  assert.equal((await getPage(again.port, 'keyed.localhost', '/guides/deploy', siteCookie)).status, 200)
+  assert.equal((await adminJson(again.port, '/admin/api/state', { cookie: adminCookie })).json.authenticated, true)
+})

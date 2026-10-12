@@ -28,14 +28,34 @@ function secret(env: Record<string, string | undefined> = process.env): Buffer {
   if (env.SESSION_SECRET) return createHash('sha256').update(env.SESSION_SECRET).digest()
   const file = join(resolve(env.DATA_DIR || './data'), '_secrets', 'session.key')
   if (secretCache?.key === file) return secretCache.value
-  let value: Buffer
+  const read = () => {
+    const v = Buffer.from(readFileSync(file, 'utf-8').trim(), 'hex')
+    if (v.length !== 32) throw new Error('bad key')
+    return v
+  }
+  let value: Buffer | undefined
   try {
-    value = Buffer.from(readFileSync(file, 'utf-8').trim(), 'hex')
-    if (value.length !== 32) throw new Error('bad key')
+    value = read()
   } catch {
-    value = randomBytes(32)
+    // First use. The public server and the admin server share this file and
+    // may both get here at once: create it exclusively, and whoever loses the
+    // race reads the winner's key instead of keeping a different one.
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
-    writeFileSync(file, value.toString('hex') + '\n', { mode: 0o600 })
+    for (let attempt = 0; attempt < 5 && !value; attempt++) {
+      try {
+        const fresh = randomBytes(32)
+        writeFileSync(file, fresh.toString('hex') + '\n', { mode: 0o600, flag: 'wx' })
+        value = fresh
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+        try {
+          value = read()
+        } catch {
+          /* the winner is still writing: try again */
+        }
+      }
+    }
+    if (!value) throw new Error('could not establish the session key')
   }
   secretCache = { key: file, value }
   return value
