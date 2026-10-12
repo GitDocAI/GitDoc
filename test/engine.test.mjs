@@ -266,6 +266,20 @@ async function fakeOpenSearch({ dim = 0 } = {}) {
       if (req.method === 'HEAD') return send(indices.has(idx) ? 200 : 404)
       if (req.method === 'PUT') return indices.add(idx), send(200, { acknowledged: true })
       if (url === '/_bulk') return send(200, { errors: false, items: [] })
+      if (url.endsWith('/_search') && raw.includes('"knn"')) {
+        // The vector query finds a page that shares no words with the question.
+        return send(200, {
+          hits: {
+            hits: [
+              {
+                _score: 0.9,
+                _source: { entry_id: 'e2', section_id: 's1', version_id: 'v1', path: '/guides/pricing', title: 'Pricing', content: 'The cost depends on the plan you pick.' },
+              },
+              { _score: 0.8, _source: { entry_id: 'e1', section_id: 's1', version_id: 'v1', path: '/guides/deploy', title: 'Deploying', content: 'x' } },
+            ],
+          },
+        })
+      }
       if (url.endsWith('/_search')) {
         return send(200, {
           hits: {
@@ -331,9 +345,18 @@ test('search: with an embeddings endpoint the index gets vectors and queries use
   const doc = JSON.parse(os.seen.find((x) => x.url === '/_bulk').raw.trim().split('\n')[1])
   assert.equal(doc.doc_embedding.length, 8)
 
-  await search(s.port, 'vec.localhost', 'anything')
-  const q = JSON.parse(os.seen.filter((x) => x.url.endsWith('/_search')).at(-1).raw)
-  assert.equal(q.query.bool.should.at(-1).knn.doc_embedding.k, 10)
+  const fused = await search(s.port, 'vec.localhost', 'anything')
+  const bodies = os.seen.filter((x) => x.url.endsWith('/_search')).map((x) => JSON.parse(x.raw))
+  const knn = bodies.find((b) => b.query.knn).query.knn.doc_embedding
+  assert.equal(knn.k, 10)
+  assert.equal(knn.vector.length, 8)
+  assert.ok(knn.filter.bool.must.some((c) => c.term?.doc_type === 'doc_entry'), 'filtered like the text query')
+  assert.ok(bodies.some((b) => b.query.bool), 'and the text query still runs')
+
+  // Reciprocal rank fusion: the page both found (e1) beats the one found only
+  // by meaning (e2), and e2 is included, shown from its content.
+  assert.deepEqual(fused.results.map((r) => r.entry_id), ['e1', 'e2'])
+  assert.match(fused.results[1].highlights[0], /cost depends/)
 })
 
 test('search: an unreachable OpenSearch degrades search, not the publish', async () => {
@@ -580,16 +603,34 @@ test('events: searches and page views are recorded when asked, and only then', a
   assert.ok(!existsSync(join(off.data, '_events')))
 })
 
-test('the assistant panel is shown only when the manifest turns it on', async () => {
-  const s = await startServer()
+test('the assistant is offered only when the docs turn it on AND the server has a chat model', async () => {
+  const enabled = { assistant: { enabled: true, floating: true, custom_instructions: 'Be brief.' } }
+  const surfaces = (text) => ({
+    panel: /data-assistant-panel/.test(text),
+    floating: /assistant-floating|data-assistant-floating/.test(text),
+    askRow: /data-search-ask-btn/.test(text),
+    palette: /data-assistant="(true|false)"/.exec(text)?.[1],
+  })
+
+  // No chat model on the server: nothing to ask, so no surface at all.
+  const plain = await startServer()
+  await publish(plain.port, makeSite({ name: 'No Chat', pages: DOCS, extra: enabled }), 'nochat.localhost')
+  const none = surfaces((await http(plain.port, '/guides/deploy', { host: 'nochat.localhost' })).text)
+  assert.deepEqual(none, { panel: false, floating: false, askRow: false, palette: 'false' })
+
+  // A chat model, but the docs did not ask for the assistant.
+  const ai = await fakeAI()
+  const s = await startServer({ env: { AI_URL: ai.url, AI_CHAT_MODEL: 'c' } })
   await publish(s.port, makeSite({ name: 'Off Panel', pages: DOCS }), 'offp.localhost')
-  await publish(
-    s.port,
-    makeSite({ name: 'On Panel', pages: DOCS, extra: { assistant: { enabled: true, custom_instructions: 'Be brief.' } } }),
-    'onp.localhost',
-  )
-  assert.doesNotMatch((await http(s.port, '/guides/deploy', { host: 'offp.localhost' })).text, /data-assistant-panel/)
-  assert.match((await http(s.port, '/guides/deploy', { host: 'onp.localhost' })).text, /data-assistant-panel/)
+  const off = surfaces((await http(s.port, '/guides/deploy', { host: 'offp.localhost' })).text)
+  assert.deepEqual(off, { panel: false, floating: false, askRow: false, palette: 'false' })
+
+  // Both: panel, floating button and the "Ask" row in search.
+  await publish(s.port, makeSite({ name: 'On Panel', pages: DOCS, extra: enabled }), 'onp.localhost')
+  const on = surfaces((await http(s.port, '/guides/deploy', { host: 'onp.localhost' })).text)
+  assert.equal(on.panel, true)
+  assert.equal(on.askRow, true)
+  assert.equal(on.palette, 'true')
 })
 
 // ------------------------------------------- files written by someone else ---

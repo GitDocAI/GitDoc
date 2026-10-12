@@ -15,7 +15,7 @@ let cached: { key: string; backend: SearchBackend } | undefined
  *                                         is set, else embedded)
  *   OPENSEARCH_URL, OPENSEARCH_USERNAME, OPENSEARCH_PASSWORD, OPENSEARCH_INSECURE
  *   AI_URL, AI_API_KEY, AI_API_SECRET, AI_EMBEDDING_MODEL   → semantic search
- *   SEARCH_MIN_SIMILARITY                                   (embedded; default 0.3)
+ *   SEARCH_MIN_SIMILARITY                                   (default 0.3)
  */
 export function searchBackend(env: Record<string, string | undefined> = process.env): SearchBackend {
   const kind = env.SEARCH_BACKEND || (env.OPENSEARCH_URL ? 'opensearch' : 'embedded')
@@ -33,6 +33,7 @@ export function searchBackend(env: Record<string, string | undefined> = process.
       password: env.OPENSEARCH_PASSWORD,
       insecure: env.OPENSEARCH_INSECURE === 'true',
       embedder: embedder ?? undefined,
+      minSimilarity: Number.isFinite(Number(env.SEARCH_MIN_SIMILARITY)) && env.SEARCH_MIN_SIMILARITY ? Number(env.SEARCH_MIN_SIMILARITY) : undefined,
     })
   } else if (kind === 'embedded') {
     const min = Number(env.SEARCH_MIN_SIMILARITY)

@@ -117,3 +117,8 @@ export function aiFromEnv(env: Record<string, string | undefined> = process.env)
     embeddingModel: env.AI_EMBEDDING_MODEL || undefined,
   })
 }
+
+/** Whether this server can answer questions (the assistant is only offered then). */
+export function chatConfigured(env: Record<string, string | undefined> = process.env): boolean {
+  return !!(env.AI_URL && env.AI_CHAT_MODEL)
+}

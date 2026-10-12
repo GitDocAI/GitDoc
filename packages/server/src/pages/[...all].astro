@@ -21,6 +21,7 @@ import { resolvePreset } from '../lib/presets'
 import { ContentSource } from '../lib/contentSource'
 import { loadSsrBundle } from '../lib/serverData'
 import { errorPage } from '../lib/errorPage'
+import { chatConfigured } from '../lib/ai'
 import { reportPageView } from '../lib/pageViewEvent'
 import { visitorGeo } from '../lib/geo'
 import { buildJsonLd } from '../lib/jsonLd'
@@ -127,6 +128,10 @@ if (bundle.mapping.isPrivate) {
 
 // --- Map the bundle onto the props the body below expects -----------
 const documentation = bundle.documentation
+// The assistant is offered only when the documentation turns it on AND this
+// server has a chat model: otherwise the panel, the floating button and the
+// "Ask" row in search would all lead to an error.
+const assistantOn = documentation.config?.assistant?.enabled === true && chatConfigured()
 const sections = bundle.sections
 const activeSection = bundle.activeSection
 const activeVersionRaw = bundle.activeVersion
@@ -635,7 +640,7 @@ const jsonLd = buildJsonLd({
       navbarLinks={navbarLinks}
       hasBothModes={hasBothModes}
       preset={preset}
-      assistantEnabled={documentation.config?.assistant?.enabled === true}
+      assistantEnabled={assistantOn}
       breadcrumb={breadcrumb}
       versionSelectorEnabled={versionSelectorEnabled === true}
       versionSelectorPosition={versionSelectorPosition ?? 'navbar_right'}
@@ -668,7 +673,7 @@ const jsonLd = buildJsonLd({
               activePageId={currentEntry?.id ?? ''}
               arrangement={preset.arrangement}
               searchInSidebar={preset.header.searchInSidebar}
-              assistantEnabled={documentation.config?.assistant?.enabled === true}
+              assistantEnabled={assistantOn}
               docName={docName}
               logoDarkUrl={logoDarkUrl}
               logoLightUrl={logoLightUrl}
@@ -712,7 +717,7 @@ const jsonLd = buildJsonLd({
               activePageId={currentEntry?.id ?? ''}
               arrangement={preset.arrangement}
               searchInSidebar={preset.header.searchInSidebar}
-              assistantEnabled={documentation.config?.assistant?.enabled === true}
+              assistantEnabled={assistantOn}
               docName={docName}
               logoDarkUrl={logoDarkUrl}
               logoLightUrl={logoLightUrl}
@@ -738,7 +743,9 @@ const jsonLd = buildJsonLd({
                     {showPageTitle && <h1 class="doc-page-title">{currentEntry?.title}</h1>}
                     <div class="tiptap-editor prose-mimic" set:html={currentHtml} />
                     <PrevNext prev={prevPage} next={nextPage} />
-                    <StaticFooter config={documentation.config?.footer} siteName={docName} />
+                    <div class="doc-footer-slot">
+                      <StaticFooter config={documentation.config?.footer} siteName={docName} />
+                    </div>
                   </article>
                 </div>
                 {currentRightPanelHtml ? (
@@ -752,13 +759,15 @@ const jsonLd = buildJsonLd({
             ) : (
               /* Pearl + Mist keep the TOC inside the content area,
                  sitting flush with the right edge of the article. */
-              <div class="flex-1 min-w-0 relative">
-                <div class="flex justify-center">
+              <div class="flex-1 min-w-0 relative flex flex-col">
+                <div class="flex justify-center flex-1">
                   <article class="doc-article max-w-4xl w-full px-5 py-4 sm:px-10 sm:py-6 lg:p-8">
                     {showPageTitle && <h1 class="doc-page-title">{currentEntry?.title}</h1>}
                     <div class="tiptap-editor prose-mimic" set:html={currentHtml} />
                     <PrevNext prev={prevPage} next={nextPage} />
-                    <StaticFooter config={documentation.config?.footer} siteName={docName} />
+                    <div class="doc-footer-slot">
+                      <StaticFooter config={documentation.config?.footer} siteName={docName} />
+                    </div>
                   </article>
                   {currentRightPanelHtml ? (
                     <aside class="right-panel-rail" aria-label="Related">
@@ -776,7 +785,7 @@ const jsonLd = buildJsonLd({
     </div>
   </div>
 
-  {documentation.config?.assistant?.enabled === true && (
+  {assistantOn && (
     <>
       {/* section_id → href, so the panel's answer "Sources" chips can
           link back into the docs. Reuses navItems (already built for the
@@ -796,5 +805,5 @@ const jsonLd = buildJsonLd({
     </>
   )}
 
-  <SearchPalette />
+  <SearchPalette assistantEnabled={assistantOn} />
 </BaseLayout>

@@ -69,7 +69,8 @@
     /* Update the Ask Assistant footer label with the current query. */
     const ask = document.querySelector('[data-search-ask]')
     const askLabel = document.querySelector('[data-search-ask-label]')
-    if (ask && askLabel) {
+    const palette = document.querySelector('[data-search-palette]')
+    if (ask && askLabel && palette && palette.dataset.assistant === 'true') {
       const q = query.trim()
       if (q) {
         ask.hidden = false

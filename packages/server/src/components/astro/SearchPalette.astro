@@ -10,12 +10,19 @@
  * Footer "Ask Assistant" button forwards the current query to the
  * lateral chat panel via `window.__assistantSubmit` (declared by
  * `/assistant-panel.js`). One conversation surface, two entry points.
+ * The row is rendered only when the assistant exists (`assistantEnabled`):
+ * without it there would be nothing to hand the question to.
  */
+interface Props {
+  assistantEnabled?: boolean
+}
+const { assistantEnabled = false } = Astro.props
 ---
 
 <div
   class="search-palette"
   data-search-palette
+  data-assistant={assistantEnabled ? 'true' : 'false'}
   data-open="false"
   aria-hidden="true"
   inert
@@ -56,6 +63,7 @@
 
     <div class="search-palette__results" data-search-results role="listbox"></div>
 
+    {assistantEnabled && (
     <div class="search-palette__askwrap" data-search-ask hidden>
       <div class="search-palette__askwrap-label">Ask Assistant</div>
       <button
@@ -85,6 +93,7 @@
         <span data-search-ask-label>Can you tell me about …?</span>
       </button>
     </div>
+    )}
   </div>
 </div>
 

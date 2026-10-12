@@ -6,6 +6,10 @@
  */
 
 .doc-article {
+  /* A column, so the footer can sit at the bottom of a short page instead
+     of right under its text (see .doc-footer-slot). */
+  display: flex;
+  flex-direction: column;
   font-family: var(--font-sans);
   color: var(--content-text);
   line-height: 1.65;
@@ -185,6 +189,13 @@ html.dark .tiptap-editor .shiki code span {
 
 .doc-article > * + * {
   margin-top: 1.1em;
+}
+
+/* The footer sits at the bottom of the viewport when the page is short
+   (no pointless scrolling), and always keeps some air above it. */
+.doc-article > .doc-footer-slot {
+  margin-top: auto;
+  padding-top: 3.5rem;
 }
 
 .doc-article h1,

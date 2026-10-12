@@ -24,6 +24,8 @@ export interface OpenSearchOptions {
   /** Accept a self-signed certificate (the default in OpenSearch's image). */
   insecure?: boolean
   embedder?: Embedder
+  /** Passages less similar than this to the query are ignored (cosine, 0–1). */
+  minSimilarity?: number
 }
 
 interface Reply {
@@ -41,6 +43,7 @@ export class OpenSearchBackend implements SearchBackend {
   private readonly auth?: string
   private readonly insecure: boolean
   private readonly embedder?: Embedder
+  private readonly minSimilarity: number
 
   constructor(opts: OpenSearchOptions) {
     this.base = new URL(opts.url)
@@ -51,6 +54,7 @@ export class OpenSearchBackend implements SearchBackend {
     this.base.password = ''
     this.insecure = !!opts.insecure
     this.embedder = opts.embedder
+    this.minSimilarity = opts.minSimilarity ?? 0.3
   }
 
   static indexName(site: SiteRef): string {
@@ -215,6 +219,13 @@ export class OpenSearchBackend implements SearchBackend {
     await this.json('DELETE', OpenSearchBackend.indexName(site), undefined, [404])
   }
 
+  /**
+   * Two searches, fused. The text query (BM25, title ×2, with highlights) and,
+   * when there is an embeddings model, a k-NN query. They score on different
+   * scales, so adding them lets the lexical side drown the semantic one;
+   * reciprocal rank fusion uses only the ranks. Without vectors the text
+   * query's own scores are returned unchanged.
+   */
   private async query(site: SiteRef, q: SearchQuery, source: string[], highlight: boolean, size: number) {
     const index = OpenSearchBackend.indexName(site)
 
@@ -227,20 +238,24 @@ export class OpenSearchBackend implements SearchBackend {
       }
     }
 
-    const must: unknown[] = [{ term: { doc_type: 'doc_entry' } }]
-    if (q.versionId) must.push({ term: { version_id: q.versionId } })
-    const should: unknown[] = [
-      { match: { title: { query: q.query, boost: 2.0 } } },
-      { match: { content: { query: q.query, boost: 1.0 } } },
-    ]
-    if (vector) should.push({ knn: { doc_embedding: { vector, k: size } } })
+    const filter: unknown[] = [{ term: { doc_type: 'doc_entry' } }]
+    if (q.versionId) filter.push({ term: { version_id: q.versionId } })
 
-    const r = await this.json(
+    const text = this.json(
       'POST',
       `${index}/_search`,
       {
         size,
-        query: { bool: { must, should, minimum_should_match: 1 } },
+        query: {
+          bool: {
+            must: filter,
+            should: [
+              { match: { title: { query: q.query, boost: 2.0 } } },
+              { match: { content: { query: q.query, boost: 1.0 } } },
+            ],
+            minimum_should_match: 1,
+          },
+        },
         _source: source,
         ...(highlight
           ? {
@@ -257,7 +272,53 @@ export class OpenSearchBackend implements SearchBackend {
       },
       [404], // never published → nothing to find
     )
-    return (r?.hits?.hits ?? []) as any[]
+
+    const semantic = vector
+      ? this.json(
+          'POST',
+          `${index}/_search`,
+          {
+            size,
+            // cosinesimil scores are (1 + cos) / 2: drop what is unrelated.
+            min_score: (1 + this.minSimilarity) / 2,
+            query: { knn: { doc_embedding: { vector, k: size, filter: { bool: { must: filter } } } } },
+            _source: Array.from(new Set([...source, 'content'])),
+          },
+          [404],
+        ).catch(() => null) // an index without vectors: text only
+      : Promise.resolve(null)
+
+    const [t, v] = await Promise.all([text, semantic])
+    const textHits = (t?.hits?.hits ?? []) as any[]
+    const vectorHits = (v?.hits?.hits ?? []) as any[]
+    if (!vectorHits.length) return textHits
+
+    const K = 60
+    const fused = new Map<string, { hit: any; score: number }>()
+    const add = (hits: any[], hasHighlight: boolean) =>
+      hits.forEach((h, rank) => {
+        const key = h._source?.entry_id ?? h._id
+        const cur = fused.get(key)
+        const score = 1 / (K + rank + 1)
+        if (cur) {
+          cur.score += score
+          if (hasHighlight) cur.hit = { ...cur.hit, highlight: h.highlight }
+        } else {
+          fused.set(key, { hit: { ...h }, score })
+        }
+      })
+    add(textHits, true)
+    add(vectorHits, false)
+    return [...fused.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, size)
+      .map(({ hit, score }) => {
+        // A page found only by meaning has no highlight: show where it starts.
+        if (!hit.highlight && hit._source?.content) {
+          hit.highlight = { content: [String(hit._source.content).slice(0, 150)] }
+        }
+        return { ...hit, _score: score }
+      })
   }
 
   async search(site: SiteRef, q: SearchQuery): Promise<SearchResult[]> {
