@@ -64,7 +64,7 @@ writeFileSync(
     {
       name: '@gitdocai/engine',
       version,
-      description: 'The gitdoc rendering engine: server and renderer, prebuilt. Used by the gitdoc CLI.',
+      description: 'The GitDoc rendering engine: server and renderer, prebuilt. Used by the gitdoc CLI.',
       license: 'AGPL-3.0-only',
       repository: { type: 'git', url: 'git+https://github.com/GitDocAI/GitDoc.git' },
       homepage: 'https://gitdoc.ai',

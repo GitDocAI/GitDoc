@@ -1,4 +1,4 @@
-# Self-hosted gitdoc server: one container, one volume.
+# Self-hosted GitDoc server: one container, one volume.
 #
 #   cp .env.example .env        # set PUBLISH_TOKEN
 #   docker compose up -d --build
