@@ -3,7 +3,9 @@
  * Sign-out control for private documentation. Rendered only when the reader
  * has a session. It is a POST form, not a link: the site prefetches links as
  * they scroll into view, and prefetching a sign-out link would sign the reader
- * out by itself.
+ * out by itself. `data-astro-reload` makes it a full page load: the client
+ * router would otherwise submit it with fetch() and splice the login page (a
+ * standalone document) into the current one.
  */
 interface Props {
   /** icon: a round icon button (navbar); row: a labelled row (menus, sidebar). */
@@ -15,7 +17,7 @@ const { variant = 'icon', who } = Astro.props
 const title = who ? `Sign out (${who})` : 'Sign out'
 ---
 
-<form method="post" action="/api/auth/logout" data-sign-out class:list={[variant === 'row' && 'w-full']}>
+<form method="post" action="/api/auth/logout" data-sign-out data-astro-reload class:list={[variant === 'row' && 'w-full']}>
   <button
     type="submit"
     aria-label="Sign out"

@@ -1175,6 +1175,9 @@ test('a signed-in reader of a private site can sign out; public sites show no si
   assert.equal(page.status, 200)
   assert.match(page.text, /<form[^>]*method="post"[^>]*action="\/api\/auth\/logout"/, 'sign-out is a POST form')
   assert.doesNotMatch(page.text, /<a[^>]*href="\/api\/auth\/logout"/, 'and not a link the site would prefetch')
+  // The client router must not submit it with fetch() and splice the login
+  // document into this page: it has to be a full page load.
+  assert.match(page.text, /<form[^>]*data-sign-out[^>]*data-astro-reload|<form[^>]*data-astro-reload[^>]*data-sign-out/)
 
   // A GET (what prefetching does) must not end the session.
   const prefetch = await http(s.port, '/api/auth/logout', { host: 'out.localhost', headers: { cookie } })
