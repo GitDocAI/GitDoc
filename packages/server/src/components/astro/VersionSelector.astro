@@ -1,0 +1,223 @@
+---
+/**
+ * Version dropdown — mirrors publish-web's `VersionSelector` minus the
+ * client-side state. Uses native <details>/<summary> so the open/close
+ * is JS-free; the menu shows version name + Latest/Deprecated badges.
+ *
+ * Renders the GitBranch icon in the accent color, the active version
+ * name, and a chevron. The full version list lives in the absolutely
+ * positioned menu below.
+ */
+interface Version {
+  id: string
+  name: string
+  slug: string
+  is_latest?: boolean
+  is_default?: boolean
+  is_deprecated?: boolean
+}
+
+interface Props {
+  versions: Version[]
+  activeVersionId: string
+  activeVersionName: string
+}
+const { versions, activeVersionId, activeVersionName } = Astro.props
+
+// Each option lands on the version's root (`/{slug}`). We deliberately
+// don't try to preserve the current section/page path across the jump
+// — the same entry may not exist in the target version, so anchoring
+// at the root is the safe behavior. `loadSsrBundle` reads `slug` from
+// the first URL segment and resolves to that version's first section.
+function hrefFor(v: Version): string {
+  return `/${v.slug}`
+}
+---
+
+<details class="version-selector">
+  <summary class="version-selector__button">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+      class="version-selector__icon"
+    >
+      <line x1="6" x2="6" y1="3" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+    <span class="version-selector__value">{activeVersionName || 'Select version'}</span>
+    {versions.length > 1 && (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+        class="version-selector__chevron"
+      >
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    )}
+  </summary>
+
+  {versions.length > 1 && (
+    <div class="version-selector__menu">
+      <div class="version-selector__label">Versions</div>
+      <ul class="version-selector__list">
+        {versions.map((v) => (
+          <li>
+            <a
+              href={hrefFor(v)}
+              class:list={['version-selector__option', v.id === activeVersionId ? 'is-active' : '']}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="version-selector__option-icon">
+                <line x1="6" x2="6" y1="3" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+              <span class="version-selector__option-name">{v.name}</span>
+              {v.is_default && (
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="version-selector__option-badge">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              )}
+              {v.is_latest && <span class="version-selector__pill is-latest">Latest</span>}
+              {v.is_deprecated && <span class="version-selector__pill is-deprecated">Deprecated</span>}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )}
+</details>
+
+<style>
+  .version-selector {
+    position: relative;
+  }
+  .version-selector > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .version-selector > summary::-webkit-details-marker {
+    display: none;
+  }
+  .version-selector__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--foreground);
+    transition: background-color 0.15s;
+  }
+  .version-selector__button:hover {
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  }
+  .version-selector[open] .version-selector__button {
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  }
+  .version-selector__icon {
+    color: var(--primary);
+    flex-shrink: 0;
+  }
+  .version-selector__chevron {
+    opacity: 0.6;
+    transition: transform 0.15s;
+    flex-shrink: 0;
+  }
+  .version-selector[open] .version-selector__chevron {
+    transform: rotate(180deg);
+  }
+
+  .version-selector__menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 20;
+    min-width: 220px;
+    padding: 4px;
+    background: var(--background);
+    border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--foreground) 18%, transparent);
+  }
+  .version-selector__label {
+    padding: 8px 10px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+    border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+    margin-bottom: 4px;
+  }
+  .version-selector__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .version-selector__option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    text-decoration: none;
+    color: var(--foreground);
+    transition: background-color 0.1s;
+  }
+  .version-selector__option:hover {
+    background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  }
+  .version-selector__option.is-active {
+    background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  }
+  .version-selector__option-icon {
+    color: var(--primary);
+    flex-shrink: 0;
+  }
+  .version-selector__option-name {
+    flex: 1;
+  }
+  .version-selector__option-badge {
+    color: var(--primary);
+    flex-shrink: 0;
+  }
+  .version-selector__pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 9999px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .version-selector__pill.is-latest {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 18%, transparent);
+  }
+  .version-selector__pill.is-deprecated {
+    color: rgb(245 158 11);
+    background: rgba(245, 158, 11, 0.18);
+  }
+</style>

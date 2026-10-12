@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Capa_2" data-name="Capa 2" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1000 1000">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        fill: url(#Nueva_muestra_de_degradado_1);
+      }
+    </style>
+    <linearGradient id="Nueva_muestra_de_degradado_1" data-name="Nueva muestra de degradado 1" x1="249.96" y1="933.09" x2="750.04" y2="66.91" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2553eb"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <g id="Capa_1-2" data-name="Capa 1">
+    <g>
+      <path class="cls-2" d="m500,0h0C775.96,0,1000,224.04,1000,500h0c0,275.96-224.04,500-500,500h0C224.04,1000,0,775.96,0,500H0C0,224.04,224.04,0,500,0Z"/>
+      <g>
+        <rect class="cls-1" x="545.45" y="545.45" width="90.91" height="90.91"/>
+        <path class="cls-1" d="m363.64,363.64v90.91h363.64v272.73h-272.73v-181.82h-181.82v-272.73h545.45c0-50.21-40.7-90.91-90.91-90.91h-454.55c-50.21,0-90.91,40.7-90.91,90.91v272.73l272.73,272.73h272.73c50.21,0,90.91-40.7,90.91-90.91v-363.64h-454.55Z"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,86 @@
+/* Changelog Update entry layout — matches the SSG (`publish-web`)
+ * visual exactly. Two-column at wide widths (sticky label/tags aside +
+ * body); single column with inline header below the narrow breakpoint.
+ *
+ * Responsive behavior is driven by a `data-narrow` attribute set by the
+ * component itself via ResizeObserver — so the layout reacts to the
+ * ACTUAL rendered width of the entry, not the browser viewport.
+ */
+
+/* --------------------------------------------------------------------- */
+/* Spacing (applies to all widths). No border-top — the padding alone   */
+/* keeps entries readable without a chrome separator.                    */
+/* --------------------------------------------------------------------- */
+
+.update-entry,
+.update-node-view {
+  padding-top: 2rem !important;
+  padding-bottom: 2rem !important;
+}
+
+.update-entry:first-child,
+.update-node-view:first-child {
+  padding-top: 0 !important;
+}
+
+.update-entry:last-child,
+.update-node-view:last-child {
+  padding-bottom: 0 !important;
+}
+
+.update-footer {
+  margin-top: 1.5rem !important;
+}
+
+/* --------------------------------------------------------------------- */
+/* Wide layout (data-narrow="false") — two-column grid                    */
+/* --------------------------------------------------------------------- */
+
+.update-entry[data-narrow="false"] {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 2.5rem;
+}
+
+.update-entry[data-narrow="false"] .update-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  position: sticky;
+  top: 2rem;
+  align-self: start;
+}
+
+.update-entry[data-narrow="false"] .update-mobile-header {
+  display: none;
+}
+
+/* --------------------------------------------------------------------- */
+/* Narrow layout (data-narrow="true" — the default before measurement)    */
+/* Aside is hidden; the inline header takes its place.                    */
+/* --------------------------------------------------------------------- */
+
+.update-entry[data-narrow="true"] .update-aside,
+.update-entry:not([data-narrow]) .update-aside {
+  display: none;
+}
+
+.update-entry[data-narrow="true"] .update-mobile-header,
+.update-entry:not([data-narrow]) .update-mobile-header {
+  display: flex;
+}
+
+.update-entry[data-narrow="true"] {
+  padding-top: 1.25rem !important;
+  padding-bottom: 1.25rem !important;
+}
+
+/* First/last trim wins over narrow tightening. */
+.update-entry[data-narrow="true"]:first-child {
+  padding-top: 0 !important;
+}
+
+.update-entry[data-narrow="true"]:last-child {
+  padding-bottom: 0 !important;
+}

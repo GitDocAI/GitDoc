@@ -1,0 +1,307 @@
+---
+/**
+ * Cmd+K search palette.
+ *
+ * Always in the DOM, hidden via `data-open="false"` until the user
+ * clicks `[data-search-trigger]` or presses ⌘K / Ctrl+K. Results come
+ * from `/api/search` (Worker → content-runtime s2s) — see
+ * `/search-palette.js`.
+ *
+ * Footer "Ask Assistant" button forwards the current query to the
+ * lateral chat panel via `window.__assistantSubmit` (declared by
+ * `/assistant-panel.js`). One conversation surface, two entry points.
+ * The row is rendered only when the assistant exists (`assistantEnabled`):
+ * without it there would be nothing to hand the question to.
+ */
+interface Props {
+  assistantEnabled?: boolean
+}
+const { assistantEnabled = false } = Astro.props
+---
+
+<div
+  class="search-palette"
+  data-search-palette
+  data-assistant={assistantEnabled ? 'true' : 'false'}
+  data-open="false"
+  aria-hidden="true"
+  inert
+  role="dialog"
+  aria-label="Search documentation"
+>
+  <div class="search-palette__backdrop" data-search-close></div>
+
+  <div class="search-palette__modal" role="document">
+    <div class="search-palette__inputrow">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="search-palette__icon"
+        aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <path d="m21 21-4.3-4.3" />
+      </svg>
+      <input
+        type="text"
+        class="search-palette__input"
+        placeholder="Search…"
+        aria-label="Search documentation"
+        data-search-input
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <kbd class="search-palette__kbd">ESC</kbd>
+    </div>
+
+    <div class="search-palette__results" data-search-results role="listbox"></div>
+
+    {assistantEnabled && (
+    <div class="search-palette__askwrap" data-search-ask hidden>
+      <div class="search-palette__askwrap-label">Ask Assistant</div>
+      <button
+        type="button"
+        class="search-palette__ask"
+        data-search-ask-btn
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="search-palette__ask-icon"
+          aria-hidden="true"
+        >
+          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+          <path d="M5 3v4" />
+          <path d="M3 5h4" />
+          <path d="M19 17v4" />
+          <path d="M17 19h4" />
+        </svg>
+        <span data-search-ask-label>Can you tell me about …?</span>
+      </button>
+    </div>
+    )}
+  </div>
+</div>
+
+<style is:global>
+  .search-palette {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 96px 16px 48px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms ease;
+  }
+  .search-palette[data-open="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .search-palette__backdrop {
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--background) 55%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .search-palette__modal {
+    position: relative;
+    width: min(680px, 100%);
+    max-height: calc(100vh - 144px);
+    background: var(--background);
+    border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+    border-radius: var(--radius-lg);
+    box-shadow:
+      0 1px 2px color-mix(in srgb, var(--foreground) 8%, transparent),
+      0 24px 64px color-mix(in srgb, var(--foreground) 18%, transparent);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateY(-8px);
+    transition: transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+  .search-palette[data-open="true"] .search-palette__modal {
+    transform: translateY(0);
+  }
+
+  .search-palette__inputrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+    flex-shrink: 0;
+  }
+  .search-palette__icon {
+    color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+    flex-shrink: 0;
+  }
+  .search-palette__input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--foreground);
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+  }
+  .search-palette__input::placeholder {
+    color: color-mix(in srgb, var(--foreground) 45%, var(--background) 55%);
+  }
+  .search-palette__kbd {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+    color: color-mix(in srgb, var(--foreground) 65%, var(--background) 35%);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .search-palette__results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+  }
+  .search-palette__results:empty::before {
+    content: 'Start typing to search…';
+    display: block;
+    padding: 32px 18px;
+    text-align: center;
+    color: color-mix(in srgb, var(--foreground) 45%, var(--background) 55%);
+    font-size: 13px;
+  }
+
+  .search-palette__result {
+    display: grid;
+    grid-template-columns: 24px 1fr auto;
+    grid-template-rows: auto auto auto;
+    column-gap: 12px;
+    align-items: center;
+    padding: 10px 18px;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--foreground);
+    border-left: 2px solid transparent;
+    transition: background-color 0.1s, border-color 0.1s;
+  }
+  .search-palette__result:hover,
+  .search-palette__result[data-active="true"] {
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    border-left-color: var(--primary);
+  }
+  .search-palette__result-icon {
+    grid-row: span 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: color-mix(in srgb, var(--foreground) 50%, var(--background) 50%);
+    align-self: center;
+  }
+  .search-palette__result-crumb {
+    grid-column: 2;
+    font-size: 11px;
+    color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+    line-height: 1.3;
+  }
+  .search-palette__result-title {
+    grid-column: 2;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--foreground);
+    line-height: 1.3;
+  }
+  .search-palette__result-snippet {
+    grid-column: 2;
+    font-size: 12px;
+    color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+  }
+  .search-palette__result-arrow {
+    grid-row: span 3;
+    grid-column: 3;
+    color: color-mix(in srgb, var(--foreground) 35%, var(--background) 65%);
+    align-self: center;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .search-palette__result:hover .search-palette__result-arrow,
+  .search-palette__result[data-active="true"] .search-palette__result-arrow {
+    opacity: 1;
+  }
+
+  .search-palette__askwrap {
+    flex-shrink: 0;
+    border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+    padding: 10px 18px 14px;
+    background: color-mix(in srgb, var(--foreground) 2%, transparent);
+  }
+  .search-palette__askwrap-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--foreground) 55%, var(--background) 45%);
+    margin-bottom: 8px;
+  }
+  .search-palette__ask {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--foreground);
+    font: inherit;
+    font-size: 13.5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .search-palette__ask:hover {
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  }
+  .search-palette__ask-icon {
+    color: var(--primary);
+    flex-shrink: 0;
+  }
+
+  /* iOS Safari auto-zooms when a focused field is < 16px. Bump to 16px
+     on mobile so opening search doesn't zoom the page. */
+  @media (max-width: 1023px) {
+    .search-palette__input {
+      font-size: 16px;
+    }
+  }
+</style>

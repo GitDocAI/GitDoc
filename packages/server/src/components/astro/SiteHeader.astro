@@ -1,0 +1,67 @@
+---
+/**
+ * Top site header. Rendered statically by Astro — no JS shipped.
+ * Mirrors the visual of the legacy React <DocHeader>: logo, doc name,
+ * section tabs, and action buttons (theme toggle + search are
+ * placeholders here; wire them up as small React islands later).
+ */
+import type { Documentation, Section } from '@/types/documentation.types'
+
+interface Props {
+  documentation: Documentation
+  sections: Section[]
+  activeSection: Section | null
+  /** Hostname used to build navbar/CTA URLs. */
+  siteUrl: string
+}
+
+const { documentation, sections, activeSection } = Astro.props
+
+const displayName = documentation.name ?? 'Documentation'
+const initial = displayName[0]?.toUpperCase() ?? 'D'
+
+// Visible top-nav items are the section tabs. Each links to
+// `/{section.slug}` — clicking triggers a full navigation that the
+// Worker serves fresh (no client-side router).
+const navSections = sections.filter((s) => (s as { visible?: boolean }).visible !== false)
+---
+
+<header class="doc-header flex items-center h-16 px-6 border-b shrink-0 relative bg-background">
+  <div class="flex items-center gap-3 mr-8">
+    <div
+      class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-semibold"
+    >
+      {initial}
+    </div>
+    <a href="/" class="text-[15px] font-semibold text-foreground no-underline">
+      {displayName}
+    </a>
+  </div>
+
+  <nav class="flex items-center gap-1">
+    {
+      navSections.map((section) => {
+        const isActive = activeSection?.id === section.id
+        return (
+          <a
+            href={`/${section.slug}`}
+            class:list={[
+              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              isActive
+                ? 'bg-muted text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+            ]}
+          >
+            {(section as { icon?: string }).icon && (
+              <span
+                class="w-3.5 h-3.5 inline-block"
+                aria-hidden="true"
+              />
+            )}
+            <span>{section.name}</span>
+          </a>
+        )
+      })
+    }
+  </nav>
+</header>

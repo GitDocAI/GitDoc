@@ -1,0 +1,138 @@
+---
+/**
+ * Prev/Next page navigation at the bottom of each article.
+ * Mirrors publish-web's `PrevNextCards` (in DocContentViewer.tsx):
+ *
+ *   < Previous page title              Next page title >
+ *
+ * Pure HTML <a> links — works without JS. The Astro
+ * `<ClientRouter />` upgrades them to view transitions when JS is
+ * available. Renders nothing when there's no prev AND no next
+ * (single-page section, KB landing).
+ */
+interface NavPage {
+  id: string
+  title: string
+  slug: string
+}
+
+interface Props {
+  prev: NavPage | null
+  next: NavPage | null
+}
+
+const { prev, next } = Astro.props
+const hide = !prev && !next
+---
+
+{!hide && (
+  <>
+    <div class="prev-next-spacer" />
+    <nav class="prev-next" aria-label="Page navigation">
+      {prev ? (
+        <a href={prev.slug} class="prev-next__link prev-next__link--prev">
+          <svg
+            class="prev-next__chevron"
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+          <span class="prev-next__title">{prev.title}</span>
+        </a>
+      ) : (
+        <span class="prev-next__filler" />
+      )}
+
+      {next ? (
+        <a href={next.slug} class="prev-next__link prev-next__link--next">
+          <span class="prev-next__title">{next.title}</span>
+          <svg
+            class="prev-next__chevron"
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </a>
+      ) : (
+        <span class="prev-next__filler" />
+      )}
+    </nav>
+  </>
+)}
+
+<style>
+  /* 64px breathing room above (h-16 in publish-web); compact on mobile. */
+  .prev-next-spacer { height: 64px; }
+  @media (max-width: 767px) {
+    .prev-next-spacer { height: 32px; }
+  }
+
+  .prev-next {
+    padding: 24px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  @media (max-width: 767px) {
+    .prev-next { padding: 12px 0; gap: 8px; }
+  }
+
+  /* Hover sweep to var(--primary), neutral muted color at rest. */
+  .prev-next__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: color-mix(in srgb, var(--foreground) 60%, var(--background) 40%);
+    transition: color 0.15s;
+    min-width: 0;
+  }
+  .prev-next__link:hover { color: var(--primary); }
+  .prev-next__link:hover .prev-next__chevron { color: var(--primary); }
+
+  .prev-next__title {
+    font-size: 1.125rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 767px) {
+    .prev-next__title {
+      font-size: 0.8125rem;
+      max-width: 38vw;
+    }
+    .prev-next__chevron {
+      width: 12px;
+      height: 12px;
+    }
+  }
+
+  .prev-next__chevron {
+    flex-shrink: 0;
+    transition: transform 0.15s;
+  }
+  .prev-next__link--prev:hover .prev-next__chevron { transform: translateX(-2px); }
+  .prev-next__link--next:hover .prev-next__chevron { transform: translateX(2px); }
+
+  .prev-next__filler { display: inline-block; }
+</style>

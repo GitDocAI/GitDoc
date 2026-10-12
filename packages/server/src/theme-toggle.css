@@ -1,0 +1,31 @@
+/*
+ * Theme-toggle icon visibility. Single button, two icons; CSS picks
+ * which one to show based on `html.dark`. No JS branching needed —
+ * the toggle script just flips the class. Lives in a dedicated file
+ * imported from BaseLayout so it ships with the static CSS and
+ * survives ClientRouter view transitions.
+ */
+
+/* Both icons live in the same grid cell (the button is
+   `grid place-items-center`) and cross-fade on theme change — no
+   visible "jump" when the swap happens. */
+[data-theme-toggle] .theme-icon-sun,
+[data-theme-toggle] .theme-icon-moon {
+  grid-area: 1 / 1;
+  transition: opacity 200ms ease;
+}
+
+[data-theme-toggle] .theme-icon-sun { opacity: 0; }
+[data-theme-toggle] .theme-icon-moon { opacity: 1; }
+
+html.dark [data-theme-toggle] .theme-icon-sun { opacity: 1; }
+html.dark [data-theme-toggle] .theme-icon-moon { opacity: 0; }
+
+/* Logo swap. Default (light mode): show light, hide dark. When
+   `html.dark` is present: swap. If only one was configured the
+   StaticHeader passes the same URL to both, so the user sees the
+   logo in any mode. */
+.logo-light { display: inline-block; }
+.logo-dark  { display: none; }
+html.dark .logo-light { display: none; }
+html.dark .logo-dark  { display: inline-block; }

@@ -1,0 +1,825 @@
+---
+/**
+ * SSR entrypoint — Cloudflare Worker edition.
+ *
+ * Per request: resolve the hostname → KV (domain→doc) → R2 (the
+ * pre-rendered page bundle) via `loadSsrBundle`, then render with the
+ * shared static components. One Worker serves every documentation;
+ * new docs/domains only need KV + R2 writes, no rebuild.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro'
+import StaticHeader from '../components/astro/StaticHeader.astro'
+import StaticSidebar from '../components/astro/StaticSidebar.astro'
+import KBLanding from '../components/astro/KBLanding.astro'
+import TOC from '../components/astro/TOC.astro'
+import PrevNext from '../components/astro/PrevNext.astro'
+import StaticFooter from '../components/astro/StaticFooter.astro'
+import AssistantPanel from '../components/astro/AssistantPanel.astro'
+import AssistantFloating from '../components/astro/AssistantFloating.astro'
+import SearchPalette from '../components/astro/SearchPalette.astro'
+import { resolvePreset } from '../lib/presets'
+import { ContentSource } from '../lib/contentSource'
+import { loadSsrBundle } from '../lib/serverData'
+import { errorPage } from '../lib/errorPage'
+import { chatConfigured } from '../lib/ai'
+import { reportPageView } from '../lib/pageViewEvent'
+import { visitorGeo } from '../lib/geo'
+import { buildJsonLd } from '../lib/jsonLd'
+import {
+  extractHeadings,
+  extractRightPanels,
+  normalizeAssetUrl,
+  type TocHeading,
+} from '../lib/htmlHelpers'
+import type { PageTreeNode, ThemeConfig } from '../lib/types'
+import type { Section } from '../types/documentation.types'
+
+// --- SSR data load --------------------------------------------------
+// Bindings come from the Cloudflare adapter's runtime locals.
+const { DOMAINS_KV, DOCS_R2 } = Astro.locals.runtime.env
+const source = new ContentSource(DOMAINS_KV, DOCS_R2)
+const requestUrl = new URL(Astro.request.url)
+// `…/some-page.md` serves the clean markdown of that page (LLM-friendly /
+// "view as markdown"). Strip the suffix so the SAME entry resolution as
+// the HTML page applies.
+const isMarkdown = requestUrl.pathname.endsWith('.md')
+const resolvePath = isMarkdown
+  ? requestUrl.pathname.slice(0, -3)
+  : requestUrl.pathname
+const loaded = await loadSsrBundle(
+  Astro.request,
+  source,
+  Astro.locals.runtime.env as unknown as Record<string, unknown>,
+  resolvePath,
+)
+// loadSsrBundle returns a Response (404/500) when the hostname has no
+// mapping or the doc is missing in R2 — pass it straight through.
+if (loaded instanceof Response) return loaded
+const bundle = loaded
+
+
+if (isMarkdown) {
+  const entry = bundle.currentEntry
+  const section = bundle.activeSection
+  const version = bundle.activeVersion
+  if (!entry || !section || !version || bundle.notFound) {
+    return new Response('Not found', { status: 404 })
+  }
+  const md = await source.readText(
+    source.entryMdKey(bundle.mapping, version.id, section.id, entry.id),
+  )
+  if (md == null) return new Response('Not found', { status: 404 })
+
+  Astro.locals.runtime.ctx.waitUntil(
+    reportPageView({
+      env: Astro.locals.runtime.env,
+      mapping: bundle.mapping,
+      versionId: version.id,
+      sectionId: section.id,
+      entryId: entry.id,
+      path: requestUrl.pathname,
+      pageTitle: entry.title,
+      userAgent: Astro.request.headers.get('user-agent'),
+      ...visitorGeo(Astro.request),
+    }),
+  )
+
+  return new Response(md, {
+    headers: {
+      'content-type': 'text/markdown; charset=utf-8',
+      'cache-control': bundle.mapping.isPrivate
+        ? 'private, no-store'
+        : 'public, max-age=60, stale-while-revalidate=600',
+    },
+  })
+}
+
+// Cache public pages at the edge + in the browser. Repeat navigations
+// (incl. the ClientRouter's prefetch/fetch) then hit cache instead of
+// re-running the SSR + R2 reads. `stale-while-revalidate` serves the
+// cached copy instantly while refreshing in the background. Publishes
+// purge the Cloudflare cache (CI step), so content stays fresh.
+//
+// Private docs MUST be `no-store`: the page is gated per-request by the
+// middleware (auth + doc access), but without this header the browser
+// keeps the authenticated HTML in its disk cache — a separate store from
+// cookies — and a reload serves that copy WITHOUT re-hitting the Worker,
+// so the reader still sees private content after signing out / clearing
+// cookies. `Vary: Cookie` additionally stops any shared cache from
+// serving one reader's page to another.
+if (bundle.mapping.isPrivate) {
+  Astro.response.headers.set('Cache-Control', 'private, no-store')
+  Astro.response.headers.set('Vary', 'Cookie')
+} else {
+  Astro.response.headers.set(
+    'Cache-Control',
+    import.meta.env.DEV ? 'no-store' : 'public, max-age=60, stale-while-revalidate=600',
+  )
+}
+
+// --- Map the bundle onto the props the body below expects -----------
+const documentation = bundle.documentation
+// The assistant is offered only when the documentation turns it on AND this
+// server has a chat model: otherwise the panel, the floating button and the
+// "Ask" row in search would all lead to an error.
+const assistantOn = documentation.config?.assistant?.enabled === true && chatConfigured()
+// A reader of a private documentation can sign out (a public one has no session).
+const signedIn = bundle.mapping.isPrivate && !!Astro.locals.session
+const userLabel = Astro.locals.session?.email ?? Astro.locals.session?.name ?? undefined
+const sections = bundle.sections
+const activeSection = bundle.activeSection
+const activeVersionRaw = bundle.activeVersion
+const activeVersion = activeVersionRaw
+  ? { id: activeVersionRaw.id, name: activeVersionRaw.name ?? '', slug: activeVersionRaw.slug ?? '' }
+  : undefined
+const versions = (bundle.versions ?? []).map((v) => ({
+  id: v.id,
+  name: v.name ?? '',
+  slug: v.slug ?? '',
+  is_latest: v.is_latest,
+  is_default: v.is_default,
+  is_deprecated: v.is_deprecated,
+}))
+
+// Non-default versions live under `/{version.slug}/...`. The default
+// version stays at the bare root so the common case keeps clean URLs
+// and we don't compete with ourselves for canonical signal. Every
+// server-generated link below threads this prefix in.
+const versionPrefix =
+  activeVersionRaw && !activeVersionRaw.is_default && activeVersionRaw.slug
+    ? `/${activeVersionRaw.slug}`
+    : ''
+
+// The bundle's DocEntry tree is structurally the manifest PageTreeNode
+// (id/title/slug/type/icon/children) — cast at the boundary so the
+// body's helpers keep their existing types.
+const activeSectionTree = (bundle.activeSectionTree ?? []) as unknown as PageTreeNode[]
+const currentEntry = (bundle.currentEntry ?? null) as unknown as PageTreeNode | null
+
+// KB landing lives at the site root, and — when its name yields a free
+// slug — also at /{kbSlug}, so it can be a real navigation destination.
+// The slug is derived from the KB name with the same algorithm sections
+// use. The dashboard does NOT prevent the KB name from colliding with a
+// section slug, so we defend here: on collision the section wins and the
+// KB stays at `/` only (never shadow a real section).
+const kbEnabled = documentation.config?.kb?.enabled === true
+const kbSlug = slugify(documentation.config?.kb?.name ?? '')
+const kbSlugFree =
+  kbEnabled && kbSlug.length > 0 && !sections.some((s) => s.slug === kbSlug)
+const kbHref = kbSlugFree ? `${versionPrefix}/${kbSlug}` : `${versionPrefix}/`
+// Detect KB home from the *path with the version prefix stripped* so
+// `/v2` lands on KB just like `/` does for the default version.
+const pathWithoutVersion =
+  versionPrefix && requestUrl.pathname.startsWith(versionPrefix)
+    ? requestUrl.pathname.slice(versionPrefix.length) || '/'
+    : requestUrl.pathname
+const isKbHome =
+  kbEnabled &&
+  (pathWithoutVersion === '/' ||
+    pathWithoutVersion === '' ||
+    (kbSlugFree && pathWithoutVersion === `/${kbSlug}`))
+
+// A URL that names no section or page is a 404, not the home page: crawlers
+// would index endless duplicates and readers would not notice a broken link.
+// The Help Center (knowledge base) has its own route, `/{kb name}`, which is
+// not a section, so it is decided here where the KB is known.
+if (bundle.notFound && !isKbHome) {
+  return errorPage({
+    status: 404,
+    title: 'Page not found',
+    message: 'This page does not exist. It may have been moved or removed.',
+  })
+}
+
+// Canonicalize KB-home URLs. When the rendered page IS the KB landing but
+// the address bar doesn't match the canonical (`{versionPrefix}/{kbSlug?}`),
+// 308-redirect so bookmarks / shares always land on a URL that reflects
+// what's being shown. Common cases this fixes:
+//   - `/` rendering the KB of a non-default version that won by is_latest
+//     fallback (URL stays `/` but the content is v2's KB).
+//   - `/` rendering the KB when there's a free kbSlug (the kb has its own
+//     route at `/help-center` and we want bookmarks to use that one).
+//   - `/v2` (trailing-slash-less version root) when the canonical is
+//     `/v2/help-center`.
+// Compares with trailing slashes normalized so `/v2/` and `/v2` are
+// treated as the same path and we don't bounce in a redirect loop.
+if (isKbHome) {
+  const stripTrailing = (p: string) => (p.length > 1 ? p.replace(/\/$/, '') : p)
+  const canonical = stripTrailing(kbHref) || '/'
+  const current = stripTrailing(requestUrl.pathname) || '/'
+  if (current !== canonical) {
+    return Astro.redirect(canonical, 308)
+  }
+}
+
+// Section tab hrefs link to the section root; loadSsrBundle resolves
+// the section's first page server-side when that URL is requested.
+const sectionFirstHrefs = sections.map(
+  (s) => [s.id, `${versionPrefix}/${s.slug}`] as [string, string],
+)
+
+// KB landing data. Category cards = union of section slugs across every
+// version (deduped, active-version representation wins so icon/name match
+// what the reader is currently browsing; foreign-version slugs link to the
+// version where they exist). Popular articles are resolved from the
+// configured IDs (kbConfig.popular_articles), which are version-scoped
+// UUIDs — we walk every version and accumulate matches so a list that
+// mixes entries from v1 and v2 surfaces ALL of them, not just whichever
+// version happens to resolve first.
+
+const kbCfgForPopular = documentation.config?.kb
+const popularWanted = (kbCfgForPopular?.popular_articles ?? []) as string[]
+const shouldResolvePopular =
+  kbCfgForPopular?.show_popular_articles !== false &&
+  popularWanted.length > 0 &&
+  activeVersionRaw != null
+
+// Sections are version-scoped — each version has its own sections.json
+// with its own section UUIDs but slugs that tend to be stable. Aggregate
+// by slug so the KB home surfaces every category the doc offers, while
+// preferring the active version's name+icon for any slug that exists
+// there (so reader-current branding wins on the cards).
+type KbCategory = {
+  id: string
+  title: string
+  slug: string
+  href: string
+  icon?: string
+}
+const kbCategoryBySlug = new Map<string, KbCategory>()
+// Seed with the active version so its sections always win when slugs
+// overlap (the reader sees their current version's category metadata).
+for (const s of sections) {
+  kbCategoryBySlug.set(s.slug, {
+    id: s.id,
+    title: s.name,
+    slug: s.slug,
+    href: `${versionPrefix}/${s.slug}`,
+    icon: s.icon ?? undefined,
+  })
+}
+
+const resolvedPopular = new Map<string, { title: string; href: string }>()
+const otherVersions = activeVersionRaw
+  ? (bundle.versions ?? []).filter((v) => v.id !== activeVersionRaw.id)
+  : []
+
+await Promise.all(
+  otherVersions.map(async (v) => {
+    const vPrefix = v.is_default || !v.slug ? '' : `/${v.slug}`
+    const vSections =
+      (await source.readJson<Section[]>(source.sectionsKey(bundle.mapping, v.id))) ?? []
+    // Categories: fill in any slug we don't already have from the active
+    // version. First non-active version to advertise a missing slug wins
+    // — natural-order in the versions list.
+    for (const s of vSections) {
+      if (!kbCategoryBySlug.has(s.slug)) {
+        kbCategoryBySlug.set(s.slug, {
+          id: s.id,
+          title: s.name,
+          slug: s.slug,
+          href: `${vPrefix}/${s.slug}`,
+          icon: s.icon ?? undefined,
+        })
+      }
+    }
+    if (!shouldResolvePopular) return
+    await Promise.all(
+      vSections.map(async (s) => {
+        const tree = await source.readJson<{ doc_entries: PageTreeNode[] }>(
+          source.entryTreeKey(bundle.mapping, v.id, s.id),
+        )
+        const walk = (nodes: PageTreeNode[], prefix: string[]) => {
+          for (const n of nodes) {
+            const p = [...prefix, n.slug]
+            if (
+              n.type !== 'folder' &&
+              popularWanted.includes(n.id) &&
+              !resolvedPopular.has(n.id)
+            ) {
+              resolvedPopular.set(n.id, {
+                title: n.title,
+                href: `${vPrefix}/${s.slug}/${p.join('/')}`,
+              })
+            }
+            if (n.children) walk(n.children as PageTreeNode[], p)
+          }
+        }
+        walk(tree?.doc_entries ?? [], [])
+      }),
+    )
+  }),
+)
+
+if (shouldResolvePopular) {
+  // Resolve any popular ids that live in the active version first — the
+  // active version's `sections` is already in scope so we don't pay a
+  // second `sections.json` fetch.
+  await Promise.all(
+    sections.map(async (s) => {
+      const tree = await source.readJson<{ doc_entries: PageTreeNode[] }>(
+        source.entryTreeKey(bundle.mapping, activeVersionRaw!.id, s.id),
+      )
+      const walk = (nodes: PageTreeNode[], prefix: string[]) => {
+        for (const n of nodes) {
+          const p = [...prefix, n.slug]
+          if (
+            n.type !== 'folder' &&
+            popularWanted.includes(n.id) &&
+            !resolvedPopular.has(n.id)
+          ) {
+            resolvedPopular.set(n.id, {
+              title: n.title,
+              href: `${versionPrefix}/${s.slug}/${p.join('/')}`,
+            })
+          }
+          if (n.children) walk(n.children as PageTreeNode[], p)
+        }
+      }
+      walk(tree?.doc_entries ?? [], [])
+    }),
+  )
+}
+
+// Keep the dashboard-configured order (popular_articles is sorted by the
+// editor); drop any id that didn't resolve in any version.
+const kbPopular: Array<{ id: string; title: string; href: string }> =
+  popularWanted
+    .map((id) => {
+      const hit = resolvedPopular.get(id)
+      return hit ? { id, ...hit } : null
+    })
+    .filter((x): x is { id: string; title: string; href: string } => x !== null)
+
+    // Build a complete entry_id → href map for the active version so KB
+    // source chips can deep-link to the specific article, not just the section.
+    const kbEntriesById: Record<string, { title: string; href: string }> = {}
+    if (activeVersionRaw) {
+      for (const s of sections) {
+        const tree = await source.readJson<{ doc_entries: PageTreeNode[] }>(
+          source.entryTreeKey(bundle.mapping, activeVersionRaw.id, s.id),
+        )
+        const walk = (nodes: PageTreeNode[], prefix: string[]) => {
+          for (const n of nodes) {
+            const p = [...prefix, n.slug]
+            if (n.type !== 'folder') {
+              kbEntriesById[n.id] = {
+                title: n.title,
+                href: `${versionPrefix}/${s.slug}/${p.join('/')}`,
+              }
+            }
+            if (n.children) walk(n.children as PageTreeNode[], p)
+          }
+        }
+        walk(tree?.doc_entries ?? [], [])
+      }
+    }
+
+    const kbSections: KbCategory[] = Array.from(kbCategoryBySlug.values())
+
+// Per-doc version selector flags (default off / right).
+const versionSelectorEnabled =
+  (documentation as { version_selector_enabled?: boolean }).version_selector_enabled === true
+const versionSelectorPosition = ((documentation as { version_selector_position?: string })
+  .version_selector_position ?? 'navbar_right') as 'navbar_right' | 'after_logo'
+
+// Post-process the pre-rendered HTML from R2: pull the right-panel
+// asides out, then inject heading ids + collect the TOC.
+let processedHtml = bundle.currentHtml
+let currentHeadings: TocHeading[] = []
+let currentRightPanelHtml = ''
+if (processedHtml) {
+  const rp = extractRightPanels(processedHtml)
+  processedHtml = rp.html
+  currentRightPanelHtml = rp.panelsHtml
+  const hd = extractHeadings(processedHtml)
+  processedHtml = hd.html
+  currentHeadings = hd.headings
+}
+const currentHtml = processedHtml
+
+// A page's title isn't part of its body (docgen and the editor keep it as a
+// separate field), so the site prints it above the content. Pages that already
+// open with their own H1 are left alone, so nothing shows up twice.
+const bodyOpensWithH1 = /^\s*<h1[\s>]/i.test(processedHtml ?? '')
+const showPageTitle = !!currentEntry?.title && !isKbHome && !bodyOpensWithH1
+
+const sectionHrefMap = new Map(sectionFirstHrefs)
+
+const seo = documentation.config?.seo ?? {}
+const themeRoot = documentation.config?.theme as ThemeConfig | undefined
+const defaultThemeMode: 'dark' | 'light' =
+  themeRoot?.default === 'dark' ? 'dark' : 'light'
+const preset = resolvePreset(themeRoot?.preset)
+
+const kbConfig = documentation.config?.kb
+const pageTitle = isKbHome
+  ? (kbConfig?.name ?? 'Help Center')
+  : currentEntry?.title ?? 'Documentation'
+const docName = documentation.name ?? ''
+
+Astro.locals.runtime.ctx.waitUntil(
+  reportPageView({
+    env: Astro.locals.runtime.env,
+    mapping: bundle.mapping,
+    versionId: activeVersionRaw?.id,
+    sectionId: activeSection?.id,
+    entryId: currentEntry?.id,
+    path: requestUrl.pathname,
+    pageTitle,
+    userAgent: Astro.request.headers.get('user-agent'),
+    ...visitorGeo(Astro.request),
+  }),
+)
+
+/* Breadcrumb chain for the current page — walks the active section's
+   page tree to find the entry and collects the title of every parent
+   group along the way. Rendered in the mobile subbar as
+   "Group › Page" (or just "Page" for top-level entries). */
+function findBreadcrumb(
+  tree: PageTreeNode[],
+  entryId: string,
+  chain: string[] = [],
+): string[] | null {
+  for (const node of tree) {
+    const next = [...chain, node.title]
+    if (node.id === entryId) return next
+    if (node.children?.length) {
+      const found = findBreadcrumb(node.children, entryId, next)
+      if (found) return found
+    }
+  }
+  return null
+}
+const breadcrumb: string[] = currentEntry
+  ? findBreadcrumb(activeSectionTree, currentEntry.id) ?? [currentEntry.title]
+  : []
+
+const title = seo.title_template
+  ? seo.title_template.replace('%s', pageTitle)
+  : docName
+    ? `${pageTitle} — ${docName}`
+    : pageTitle
+
+/* Header nav: KB tab first (if enabled), then section tabs. The KB
+   tab is active when we're rendering the KB landing. */
+const navItems: Array<{ id: string; title: string; href: string; icon?: string }> = []
+if (kbConfig?.enabled) {
+  navItems.push({
+    id: '__kb__',
+    title: kbConfig.name ?? 'Help Center',
+    href: kbHref,
+    icon: kbConfig.icon,
+  })
+}
+for (const s of sections) {
+  navItems.push({
+    id: s.id,
+    title: s.name,
+    href: sectionHrefMap.get(s.id) ?? `/${s.slug}`,
+    icon: s.icon,
+  })
+}
+const activeNavId = isKbHome ? '__kb__' : (activeSection?.id ?? '')
+
+// Matches the section slug algorithm (dashboard's sections.context) so a
+// KB slug derived here lines up with stored section slugs for collision
+// checks and URL resolution.
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
+function buildSidebarPages(
+  nodes: PageTreeNode[],
+  sectionSlug: string,
+  prefix: string[] = [],
+): Array<{ id: string; title: string; slug: string; type: string; icon?: string; method?: string; children?: any[] }> {
+  return nodes.map((node) => {
+    const p = [...prefix, node.slug]
+    return {
+      id: node.id,
+      title: node.title,
+      slug: `${versionPrefix}/${sectionSlug}/${p.join('/')}`,
+      type: node.type,
+      icon: node.icon,
+      method: node.method,
+      children: node.children?.length
+        ? buildSidebarPages(node.children, sectionSlug, p)
+        : undefined,
+    }
+  })
+}
+
+function flattenForNav(
+  tree: Array<{ id: string; title: string; slug: string; type: string; children?: any[] }>,
+): Array<{ id: string; title: string; slug: string }> {
+  const out: Array<{ id: string; title: string; slug: string }> = []
+  for (const node of tree) {
+    // Any non-folder leaf is a navigable page (incl. `api_endpoint`).
+    if (node.type !== 'folder') out.push({ id: node.id, title: node.title, slug: node.slug })
+    if (node.children?.length) out.push(...flattenForNav(node.children))
+  }
+  return out
+}
+
+const sidebarPages = isKbHome || !activeSection ? [] : buildSidebarPages(activeSectionTree, activeSection.slug)
+const navPages = flattenForNav(sidebarPages)
+
+/* Prev/Next pair for the bottom-of-article navigation. Section-
+   scoped on purpose — jumping from the last page of one section to
+   the first of the next would be jarring, and publish-web doesn't
+   do it either. Null when we're on the section's only page or on
+   the KB landing. */
+const currentNavIdx = currentEntry
+  ? navPages.findIndex((p) => p.id === currentEntry.id)
+  : -1
+const prevPage = currentNavIdx > 0 ? navPages[currentNavIdx - 1] : null
+const nextPage =
+  currentNavIdx >= 0 && currentNavIdx < navPages.length - 1
+    ? navPages[currentNavIdx + 1]
+    : null
+
+const description = seo.default_description || `${docName} documentation`
+const ogImage = normalizeAssetUrl(seo.default_og_image)
+// Absolute canonical (origin + path). Search engines require an
+// absolute URL; a relative one is ignored. requestUrl.origin reflects
+// the real request host (custom domain or workers.dev).
+// KB renders at both `/` and `/{kbSlug}`; point the canonical at the
+// named URL so the two don't read as duplicate content.
+// Canonical strips any user-typed version slug from `Astro.params.all`
+// and re-applies `versionPrefix` (empty for default version). Result:
+// one canonical URL per piece of content, regardless of whether the
+// reader requested the prefixed or bare form.
+const allParam = Astro.params.all ?? ''
+const allWithoutVersion =
+  activeVersionRaw && activeVersionRaw.slug && allParam.startsWith(`${activeVersionRaw.slug}/`)
+    ? allParam.slice(activeVersionRaw.slug.length + 1)
+    : allParam === activeVersionRaw?.slug
+      ? ''
+      : allParam
+const canonicalUrl = isKbHome
+  ? `${requestUrl.origin}${kbHref}`
+  : `${requestUrl.origin}${versionPrefix}/${allWithoutVersion}`
+
+/* Logo + favicon URLs come straight from the doc config in R2.
+   `normalizeAssetUrl` is currently a passthrough — asset serving for
+   the Worker isn't wired yet (TODO). Both per-mode logos are passed
+   through and CSS-toggled based on the `html.dark` class. */
+const logoDarkUrl = normalizeAssetUrl(themeRoot?.dark?.logo_url)
+const logoLightUrl = normalizeAssetUrl(themeRoot?.light?.logo_url)
+const logoDarkWidth = themeRoot?.dark?.logo_width
+const logoDarkHeight = themeRoot?.dark?.logo_height
+const logoLightWidth = themeRoot?.light?.logo_width
+const logoLightHeight = themeRoot?.light?.logo_height
+const faviconUrl = normalizeAssetUrl(documentation.config?.favicon_url)
+const showLogoName = themeRoot?.show_name !== false
+
+/* Right-side navbar links (CTAs configured in the dashboard's Theme
+   page). Each item carries label, url, style ('default'/'primary'/
+   'subtle'), and optional icon — StaticHeader knows the rest. */
+const navbarLinks = (documentation.config?.navbar ?? []) as Array<{
+  label?: string
+  url: string
+  style?: string
+  icon?: string
+}>
+
+/* Theme toggle only shows when the doc supports both modes — if the
+   customer disabled one (`theme.modes` doesn't include both), the
+   button is hidden. */
+const themeModes = themeRoot?.modes ?? ['dark', 'light']
+const hasBothModes = themeModes.includes('dark') && themeModes.includes('light')
+
+// schema.org JSON-LD (SEO rich results). Resolve relative asset URLs
+// against the request origin — structured data requires absolute URLs.
+const toAbsUrl = (u: string | undefined): string | undefined =>
+  !u ? undefined : /^https?:\/\//.test(u) ? u : `${requestUrl.origin}${u.startsWith('/') ? '' : '/'}${u}`
+const jsonLd = buildJsonLd({
+  origin: requestUrl.origin,
+  canonicalUrl,
+  siteName: docName,
+  description,
+  pageTitle,
+  imageUrl: toAbsUrl(ogImage),
+  logoUrl: toAbsUrl(logoLightUrl ?? logoDarkUrl),
+  isHome: isKbHome,
+  section:
+    !isKbHome && activeSection
+      ? { name: activeSection.name, url: `${requestUrl.origin}/${activeSection.slug}` }
+      : null,
+})
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  canonicalUrl={canonicalUrl}
+  jsonLd={jsonLd}
+  ogImage={ogImage}
+  siteName={docName}
+  defaultThemeMode={defaultThemeMode}
+  faviconUrl={faviconUrl}
+  themeDark={themeRoot?.dark}
+  themeLight={themeRoot?.light}
+  fontFamily={themeRoot?.font_family}
+  headingFont={themeRoot?.heading_font}
+  shape={themeRoot?.shape ?? preset.shape}
+>
+
+  <div
+    class="flex flex-col h-screen overflow-hidden"
+    data-arrangement={preset.arrangement}
+    data-preset={preset.id}
+    style={`--chrome-height: ${preset.header.sectionsPlacement === 'subbar' ? '6.75rem' : '4rem'}`}
+  >
+    <StaticHeader
+      docName={docName}
+      navItems={navItems}
+      activeId={activeNavId}
+      logoDarkUrl={logoDarkUrl}
+      logoLightUrl={logoLightUrl}
+      logoDarkWidth={logoDarkWidth}
+      logoDarkHeight={logoDarkHeight}
+      logoLightWidth={logoLightWidth}
+      logoLightHeight={logoLightHeight}
+      showName={showLogoName}
+      navbarLinks={navbarLinks}
+      hasBothModes={hasBothModes}
+      preset={preset}
+      assistantEnabled={assistantOn}
+      signedIn={signedIn}
+      userLabel={userLabel}
+      breadcrumb={breadcrumb}
+      versionSelectorEnabled={versionSelectorEnabled === true}
+      versionSelectorPosition={versionSelectorPosition ?? 'navbar_right'}
+      versions={versions ?? []}
+      activeVersionId={activeVersion?.id ?? ''}
+      activeVersionName={activeVersion?.name ?? ''}
+    />
+
+    {/* Page-level scroll wrapper. Lives at full viewport width so the
+        vertical scrollbar always pins to the viewport's right edge,
+        even when the inner body row is constrained to a centered
+        max-width (Mist). For full-width (Pearl) it's transparent —
+        the inner row already spans edge-to-edge. The `data-page-scroll`
+        attr is the stable hook that nested scroll-spy scripts (TOC)
+        use to find this element. */}
+    <div class="flex-1 overflow-y-auto overflow-x-hidden" data-page-scroll>
+      <div
+        class:list={[
+          'flex min-h-full',
+          preset.arrangement === 'centered' ? 'max-w-[1440px] w-full mx-auto px-4 lg:px-6 gap-6 lg:gap-10' : '',
+        ]}
+      >
+        {isKbHome ? (
+          <>
+            {/* Mobile drawer still needs to render on KB landing so the
+                hamburger has something to open. The aside hides on
+                desktop via `lg:hidden` (passed through `isKbHome`). */}
+            <StaticSidebar
+              pages={sidebarPages}
+              activePageId={currentEntry?.id ?? ''}
+              arrangement={preset.arrangement}
+              searchInSidebar={preset.header.searchInSidebar}
+              assistantEnabled={assistantOn}
+              signedIn={signedIn}
+              userLabel={userLabel}
+      signedIn={signedIn}
+      userLabel={userLabel}
+              docName={docName}
+              logoDarkUrl={logoDarkUrl}
+              logoLightUrl={logoLightUrl}
+              logoDarkWidth={logoDarkWidth}
+              logoDarkHeight={logoDarkHeight}
+              logoLightWidth={logoLightWidth}
+              logoLightHeight={logoLightHeight}
+              showName={showLogoName}
+              hasBothModes={hasBothModes}
+              versions={versions ?? []}
+              activeVersionName={activeVersion?.name ?? ''}
+              versionSelectorEnabled={versionSelectorEnabled === true}
+              sections={navItems.map((n) => ({ id: n.id, name: n.title, href: n.href }))}
+              activeSectionId={activeNavId}
+              isKbHome={true}
+            />
+            <div class="flex-1 min-w-0 flex flex-col">
+              <KBLanding
+                name={kbConfig?.name}
+                heroTitle={kbConfig?.hero_title}
+                heroDescription={kbConfig?.hero_description}
+                heroPlaceholder={kbConfig?.hero_placeholder}
+                searchSuggestions={kbConfig?.search_suggestions ?? []}
+                showCategories={kbConfig?.show_categories !== false}
+                showPopularArticles={kbConfig?.show_popular_articles !== false}
+                popularTitle={kbConfig?.popular_title}
+                popularArticles={kbPopular ?? []}
+                sections={kbSections ?? []}
+                entriesById={kbEntriesById}
+                activeVersionId={activeVersion?.id}
+              />
+              <div class="max-w-[1000px] w-full mx-auto px-[clamp(16px,5vw,48px)] mt-auto">
+                <StaticFooter config={documentation.config?.footer} siteName={docName} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <StaticSidebar
+              pages={sidebarPages}
+              activePageId={currentEntry?.id ?? ''}
+              arrangement={preset.arrangement}
+              searchInSidebar={preset.header.searchInSidebar}
+              assistantEnabled={assistantOn}
+              signedIn={signedIn}
+              userLabel={userLabel}
+      signedIn={signedIn}
+      userLabel={userLabel}
+              docName={docName}
+              logoDarkUrl={logoDarkUrl}
+              logoLightUrl={logoLightUrl}
+              logoDarkWidth={logoDarkWidth}
+              logoDarkHeight={logoDarkHeight}
+              logoLightWidth={logoLightWidth}
+              logoLightHeight={logoLightHeight}
+              showName={showLogoName}
+              hasBothModes={hasBothModes}
+              versions={versions ?? []}
+              activeVersionName={activeVersion?.name ?? ''}
+              versionSelectorEnabled={versionSelectorEnabled === true}
+              sections={navItems.map((n) => ({ id: n.id, name: n.title, href: n.href }))}
+              activeSectionId={activeNavId}
+            />
+{preset.tocAtFarRight ? (
+              /* TOC hoisted out of the content area so it anchors to
+                 the body row's far-right edge (= viewport right in
+                 `full-width` presets) instead of hugging the article. */
+              <>
+                <div class="flex-1 min-w-0 relative flex justify-center">
+                  <article class="doc-article max-w-4xl w-full px-5 py-4 sm:px-10 sm:py-6 lg:p-8">
+                    {showPageTitle && <h1 class="doc-page-title">{currentEntry?.title}</h1>}
+                    <div class="tiptap-editor prose-mimic" set:html={currentHtml} />
+                    <PrevNext prev={prevPage} next={nextPage} />
+                    <div class="doc-footer-slot">
+                      <StaticFooter config={documentation.config?.footer} siteName={docName} />
+                    </div>
+                  </article>
+                </div>
+                {currentRightPanelHtml ? (
+                  <aside class="right-panel-rail" aria-label="Related">
+                    <Fragment set:html={currentRightPanelHtml} />
+                  </aside>
+                ) : (
+                  <TOC headings={currentHeadings ?? []} />
+                )}
+              </>
+            ) : (
+              /* Pearl + Mist keep the TOC inside the content area,
+                 sitting flush with the right edge of the article. */
+              <div class="flex-1 min-w-0 relative flex flex-col">
+                <div class="flex justify-center flex-1">
+                  <article class="doc-article max-w-4xl w-full px-5 py-4 sm:px-10 sm:py-6 lg:p-8">
+                    {showPageTitle && <h1 class="doc-page-title">{currentEntry?.title}</h1>}
+                    <div class="tiptap-editor prose-mimic" set:html={currentHtml} />
+                    <PrevNext prev={prevPage} next={nextPage} />
+                    <div class="doc-footer-slot">
+                      <StaticFooter config={documentation.config?.footer} siteName={docName} />
+                    </div>
+                  </article>
+                  {currentRightPanelHtml ? (
+                    <aside class="right-panel-rail" aria-label="Related">
+                      <Fragment set:html={currentRightPanelHtml} />
+                    </aside>
+                  ) : (
+                    <TOC headings={currentHeadings ?? []} />
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  </div>
+
+  {assistantOn && (
+    <>
+      {/* section_id → href, so the panel's answer "Sources" chips can
+          link back into the docs. Reuses navItems (already built for the
+          sidebar on every page) rather than the KB landing's per-entry
+          href map — that one deep-links to the exact article but costs a
+          full entry-tree read per section, worth paying once for the KB
+          home, not on every single page view just in case Ask AI is used. */}
+      <script
+        type="application/json"
+        data-assistant-sections
+        set:html={JSON.stringify(
+          navItems.map((n) => ({ id: n.id, href: n.href, title: n.title })),
+        ).replace(/</g, '\\u003c')}
+      />
+      <AssistantPanel activeVersionId={activeVersion?.id} />
+      {documentation.config?.assistant?.floating === true && <AssistantFloating />}
+    </>
+  )}
+
+  <SearchPalette assistantEnabled={assistantOn} />
+</BaseLayout>

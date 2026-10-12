@@ -1,0 +1,27 @@
+{
+  "name": "@gitdocai/server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Serves published documentation sites (Astro SSR on Node) and accepts publishes.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "start": "node dist/server/entry.mjs",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.7",
+    "@gitdocai/ui": "0.1.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "astro": "^7.3.8",
+    "jose": "^5.10.0",
+    "tailwindcss": "^4.0.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "esbuild": "^0.25",
+    "typescript": "~5.6.2"
+  }
+}

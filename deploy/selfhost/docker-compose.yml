@@ -1,0 +1,103 @@
+# Self-hosted GitDoc server: one container, one volume.
+#
+#   cp .env.example .env        # set PUBLISH_TOKEN
+#   docker compose up -d --build
+#
+# Then open the admin panel at http://127.0.0.1:8081: it sets a password and
+# shows how to connect the CLI. Or, from your docs folder:
+#   gitdoc connect http://localhost:8080 --token <PUBLISH_TOKEN>
+#   gitdoc publish
+services:
+  gitdoc:
+    build:
+      context: ../..
+      dockerfile: deploy/selfhost/Dockerfile
+    image: gitdocai/gitdoc-server:dev
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+      # The admin panel: only this machine can reach it. Use an SSH tunnel or
+      # your VPN to open it remotely; never publish it to the internet.
+      - "127.0.0.1:${ADMIN_PORT:-8081}:8081"
+    environment:
+      # Publishing is disabled unless this is set.
+      PUBLISH_TOKEN: ${PUBLISH_TOKEN:?set PUBLISH_TOKEN in .env}
+      # With one site published it answers on any host; with several, each
+      # answers only on its own hostname.
+      SINGLE_SITE: "true"
+      LIST_SITES: "true"
+      PUBLISH_MAX_MB: ${PUBLISH_MAX_MB:-200}
+      # Shown in the admin panel's connect commands (readers' address).
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      # Optional: skip the panel's first-run password step.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
+      # --- AI (optional) ----------------------------------------------------
+      # Any OpenAI-compatible endpoint: ThreatWinds, OpenAI, Ollama, vLLM...
+      # Embeddings give the search box meaning-based results; the chat model
+      # powers the assistant ("Ask"). Each works on its own.
+      AI_URL: ${AI_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_API_SECRET: ${AI_API_SECRET:-}        # with the key → api-key/api-secret headers
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-}
+      AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-}
+
+      # --- Search backend ---------------------------------------------------
+      # Empty = the built-in hybrid index (BM25 + vectors in the same process,
+      # stored in the volume). It needs nothing else. Set OPENSEARCH_URL to use
+      # OpenSearch instead; see the commented service below.
+      SEARCH_BACKEND: ${SEARCH_BACKEND:-}
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-}
+      OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME:-}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD:-}
+      OPENSEARCH_INSECURE: ${OPENSEARCH_INSECURE:-}
+
+      # --- Limits and analytics (optional) ----------------------------------
+      RATE_SEARCH_PER_MIN: ${RATE_SEARCH_PER_MIN:-}
+      RATE_ASK_PER_MIN: ${RATE_ASK_PER_MIN:-}
+      ASK_DAILY_LIMIT: ${ASK_DAILY_LIMIT:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}              # true behind a reverse proxy / CDN
+      EVENTS: ${EVENTS:-}                        # file → DATA_DIR/_events/*.jsonl
+      EVENTS_URL: ${EVENTS_URL:-}
+      # Hosted control plane only:
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-}
+      IAM_URL: ${IAM_URL:-}
+      PUBLISH_WEB_CLIENT_ID: ${PUBLISH_WEB_CLIENT_ID:-}
+      PUBLISH_WEB_CLIENT_SECRET: ${PUBLISH_WEB_CLIENT_SECRET:-}
+      EVENTS_TOKEN: ${EVENTS_TOKEN:-}
+    volumes:
+      - gitdoc-data:/data
+
+  # --- OpenSearch (optional) ---------------------------------------------------
+  # You do NOT need this: the built-in index already does text + vector search
+  # for a documentation site. Reach for OpenSearch when you index a very large
+  # corpus, want several servers to share one index, or already operate it.
+  #
+  # To use it: uncomment, then in .env set
+  #   OPENSEARCH_URL=http://opensearch:9200
+  # and publish again (publishing is what indexes). It is reachable only from
+  # this compose network, so its security plugin is off; enable it before
+  # exposing the port. Needs ~1 GB of RAM.
+  #
+  # opensearch:
+  #   image: opensearchproject/opensearch:2.19.1
+  #   restart: unless-stopped
+  #   environment:
+  #     discovery.type: single-node
+  #     DISABLE_SECURITY_PLUGIN: "true"
+  #     DISABLE_INSTALL_DEMO_CONFIG: "true"
+  #     OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+  #   ulimits:
+  #     memlock: { soft: -1, hard: -1 }
+  #     nofile: { soft: 65536, hard: 65536 }
+  #   volumes:
+  #     - opensearch-data:/usr/share/opensearch/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 12
+
+volumes:
+  gitdoc-data:
+  # opensearch-data:

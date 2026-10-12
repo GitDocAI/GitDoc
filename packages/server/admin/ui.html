@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>GitDoc admin</title>
+<link rel="icon" type="image/svg+xml" href="/mark.svg" />
+<script>
+  // Before first paint, so there is no flash: stored choice, else the system's.
+  try {
+    const t = localStorage.getItem('gitdoc.theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    document.documentElement.className = t
+  } catch {}
+</script>
+<style>
+  /* Same tokens as the GitDocAI dashboard. */
+  :root { --radius: 0.5rem; --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace; }
+  :root.light {
+    --background: oklch(0.98 0 0); --foreground: oklch(0.15 0 0); --card: oklch(1 0 0);
+    --primary: oklch(0.50 0.20 264); --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.95 0 0); --muted: oklch(0.95 0 0); --muted-foreground: oklch(0.45 0 0);
+    --accent: oklch(0.75 0.12 200); --destructive: oklch(0.55 0.2 25); --success: oklch(0.55 0.15 150); --warning: oklch(0.6 0.15 70);
+    --border: oklch(0.9 0 0); --input: oklch(0.9 0 0); --ring: oklch(0.50 0.20 264);
+    --sidebar: oklch(0.97 0 0); --sidebar-border: oklch(0.9 0 0); --sidebar-accent: oklch(0.93 0 0);
+  }
+  :root.dark {
+    --background: oklch(0.12 0 0); --foreground: oklch(0.93 0 0); --card: oklch(0.16 0 0);
+    --primary: oklch(0.60 0.20 264); --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.2 0 0); --muted: oklch(0.2 0 0); --muted-foreground: oklch(0.6 0 0);
+    --accent: oklch(0.70 0.12 200); --destructive: oklch(0.65 0.2 25); --success: oklch(0.72 0.15 150); --warning: oklch(0.78 0.14 75);
+    --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 10%); --ring: oklch(0.60 0.20 264);
+    --sidebar: oklch(0.1 0 0); --sidebar-border: oklch(1 0 0 / 8%); --sidebar-accent: oklch(0.18 0 0);
+  }
+  * { box-sizing: border-box; border-color: var(--border); }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font: 14px/1.5 var(--font-sans);
+    -webkit-font-smoothing: antialiased; }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: var(--muted-foreground); opacity: .4; border-radius: 4px; }
+
+  /* shell */
+  #shell { display: flex; height: 100vh; overflow: hidden; }
+  aside { width: 224px; flex: none; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--sidebar-border); }
+  .brand { height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--sidebar-border); }
+  .logo { height: 24px; width: auto; display: block; }
+  .brand .badge { margin-left: auto; font-size: 11px; padding: 1px 8px; }
+  .logo.on-light { display: none; }
+  :root.light .logo.on-dark { display: none; }
+  :root.light .logo.on-light { display: block; }
+  aside nav { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  .nav { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; font-size: 14px;
+    color: color-mix(in oklch, var(--foreground) 70%, transparent); transition: all .15s; }
+  [data-i], #theme-i { display: flex; align-items: center; }
+  .nav:hover { background: var(--sidebar-accent); color: var(--foreground); text-decoration: none; }
+  .nav.on { background: color-mix(in oklch, var(--primary) 15%, transparent); color: var(--primary); }
+  .foot { padding: 8px; border-top: 1px solid var(--sidebar-border); display: flex; flex-direction: column; gap: 4px; }
+  .foot button { all: unset; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; cursor: pointer;
+    color: color-mix(in oklch, var(--foreground) 70%, transparent); font-size: 14px; }
+  .foot button:hover { background: var(--sidebar-accent); color: var(--foreground); }
+  #content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar { height: 56px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 24px; border-bottom: 1px solid var(--border);
+    background: var(--background); font-size: 14px; color: var(--muted-foreground); }
+  .topbar b { color: var(--foreground); font-weight: 600; }
+  main { flex: 1; overflow: auto; }
+  .page { max-width: 960px; margin: 0 auto; padding: 28px 24px 80px; }
+  @media (max-width: 760px) {
+    #shell { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
+    aside { width: auto; flex-direction: row; align-items: center; border-right: 0; border-bottom: 1px solid var(--sidebar-border); }
+    .brand { border: 0; } .brand .badge { display: none; }
+    aside nav { flex-direction: row; } .foot { border: 0; flex-direction: row; }
+    .nav span:last-child, .foot span:last-child { display: none; }
+    .topbar { display: none; }
+  }
+
+  /* content */
+  h2 { font-size: 22px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h3 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted-foreground); margin: 0 0 24px; }
+  .muted { color: var(--muted-foreground); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .card > h3:first-child { margin-bottom: 12px; }
+  .list { padding: 0; overflow: hidden; }
+  .item { display: flex; align-items: center; gap: 14px; padding: 14px 18px; color: inherit; border-top: 1px solid var(--border); }
+  .item:first-child { border-top: 0; }
+  a.item:hover { background: var(--muted); text-decoration: none; }
+  .ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; flex: none;
+    background: color-mix(in oklch, var(--primary) 15%, transparent); color: var(--primary); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .stat .k { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 13px; }
+  .stat b { display: block; font-size: 24px; font-weight: 650; margin-top: 6px; letter-spacing: -0.02em; }
+  .stat small { color: var(--muted-foreground); }
+  label { display: block; font-size: 13px; font-weight: 500; margin: 14px 0 6px; }
+  input, select { width: 100%; height: 38px; padding: 0 12px; font: inherit; color: var(--foreground); background: transparent;
+    border: 1px solid var(--input); border-radius: var(--radius); }
+  input::placeholder { color: var(--muted-foreground); }
+  input:focus, select:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent); }
+  select option { background: var(--card); color: var(--foreground); }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--primary); }
+  button { font: inherit; font-weight: 500; height: 36px; padding: 0 14px; border-radius: var(--radius); border: 1px solid var(--border);
+    background: transparent; color: var(--foreground); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all .15s; }
+  button:hover { background: var(--muted); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+  button.primary:hover { filter: brightness(1.08); }
+  button.danger { color: var(--destructive); }
+  button.ghost { border-color: transparent; }
+  button:disabled { opacity: .55; cursor: default; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
+    background: var(--muted); color: var(--muted-foreground); }
+  .badge.ok { background: color-mix(in oklch, var(--success) 15%, transparent); color: var(--success); }
+  .badge.warn { background: color-mix(in oklch, var(--warning) 15%, transparent); color: var(--warning); }
+  .badge.pri { background: color-mix(in oklch, var(--primary) 15%, transparent); color: var(--primary); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  code { font-family: var(--font-mono); font-size: 12.5px; background: var(--muted); padding: 1px 6px; border-radius: 6px; }
+  .cmd { display: flex; align-items: stretch; gap: 8px; margin: 8px 0 4px; }
+  .cmd pre { flex: 1; margin: 0; padding: 10px 14px; background: var(--muted); border-radius: var(--radius); overflow-x: auto;
+    font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; }
+  .msg { padding: 10px 14px; border-radius: var(--radius); margin: 14px 0; font-size: 13px; }
+  .msg.err { color: var(--destructive); background: color-mix(in oklch, var(--destructive) 12%, transparent); }
+  .msg.ok { color: var(--success); background: color-mix(in oklch, var(--success) 12%, transparent); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tabs a { display: flex; align-items: center; gap: 8px; padding: 9px 12px; color: var(--muted-foreground); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs a:hover { color: var(--foreground); text-decoration: none; }
+  .tabs a.on { color: var(--foreground); border-color: var(--primary); }
+  .provider { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; background: var(--background); }
+  .add { border: 1px dashed var(--border); border-radius: 10px; padding: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .switch { display: flex; align-items: center; gap: 12px; }
+  .empty { text-align: center; padding: 48px 24px; }
+  .empty .ico { margin: 0 auto 14px; width: 48px; height: 48px; border-radius: 14px; }
+  .steps { padding: 0; margin: 0; list-style: none; counter-reset: s; }
+  .steps li { counter-increment: s; position: relative; padding-left: 40px; padding-bottom: 22px; }
+  .steps li:last-child { padding-bottom: 0; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%;
+    background: color-mix(in oklch, var(--primary) 15%, transparent); color: var(--primary); display: grid; place-items: center;
+    font-size: 12px; font-weight: 700; }
+  .steps li::after { content: ''; position: absolute; left: 12px; top: 30px; bottom: 4px; width: 1px; background: var(--border); }
+  .steps li:last-child::after { display: none; }
+  .kv { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+  .kv:first-of-type { border-top: 0; padding-top: 0; }
+
+  /* sign-in / onboarding */
+  #auth { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--background); }
+  .auth-card { width: 100%; max-width: 400px; }
+  .auth-card .logo { height: 40px; margin: 0 auto 20px; }
+  .auth-card h2, .auth-card .sub { text-align: center; }
+  .toast { position: fixed; right: 20px; bottom: 20px; z-index: 10; padding: 10px 14px; border-radius: var(--radius); font-size: 13px;
+    background: var(--card); border: 1px solid var(--border); box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+</style>
+</head>
+<body>
+<div id="auth" hidden></div>
+<div id="shell" hidden>
+  <aside>
+    <div class="brand">
+      <img class="logo on-dark" src="/logo-on-dark.svg" alt="GitDoc" />
+      <img class="logo on-light" src="/logo-on-light.svg" alt="GitDoc" />
+      <span class="badge pri">Admin</span>
+    </div>
+    <nav>
+      <a class="nav" href="#/sites" data-nav="sites"><span data-i="layout"></span><span>Sites</span></a>
+      <a class="nav" href="#/connect" data-nav="connect"><span data-i="plug"></span><span>Connect</span></a>
+      <a class="nav" href="#/instance" data-nav="instance"><span data-i="server"></span><span>Server</span></a>
+    </nav>
+    <div class="foot">
+      <button id="theme"><span id="theme-i"></span><span id="theme-t">Light mode</span></button>
+      <button id="logout"><span data-i="logout"></span><span>Sign out</span></button>
+    </div>
+  </aside>
+  <div id="content">
+    <div class="topbar" id="crumbs"></div>
+    <main><div class="page" id="app"></div></main>
+  </div>
+</div>
+
+<script>
+'use strict'
+// ---- icons (static, trusted markup; lucide-style paths) ----
+const ICONS = {
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+  layout: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+  plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/>',
+  server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  chev: '<path d="m9 18 6-6-6-6"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  key: '<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  ext: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+}
+function icon(name) {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('class', 'i'); s.setAttribute('aria-hidden', 'true')
+  s.innerHTML = ICONS[name] || ''
+  return s
+}
+for (const el of document.querySelectorAll('[data-i]')) el.replaceChildren(icon(el.dataset.i))
+
+// ---- helpers (DOM is built with textContent: nothing is interpreted as HTML) ----
+const $ = (s, r = document) => r.querySelector(s)
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v)
+    else if (k === 'class') el.className = v
+    else if (k === 'value') el.value = v
+    else el.setAttribute(k, v === true ? '' : v)
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) el.append(k.nodeType ? k : document.createTextNode(String(k)))
+  return el
+}
+const btn = (label, ic, attrs) => h('button', attrs, ic && icon(ic), label)
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { 'content-type': 'application/json', 'x-gitdoc-admin': '1' },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 401 && !path.includes('/admin/api/login') && !path.includes('/admin/api/setup')) { state.authenticated = false; route() }
+  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`)
+  return data
+}
+const state = { needsSetup: false, authenticated: false }
+const app = $('#app')
+const notice = (kind, text) => h('div', { class: 'msg ' + kind, role: 'status' }, text)
+function toast(text) {
+  const t = h('div', { class: 'toast', role: 'status' }, text); document.body.append(t); setTimeout(() => t.remove(), 2600)
+}
+const copyBtn = (getText) => h('button', { 'aria-label': 'Copy', onclick: async (e) => {
+  const b = e.currentTarget
+  try { await navigator.clipboard.writeText(await getText()); b.replaceChildren(icon('check'), 'Copied'); setTimeout(() => b.replaceChildren(icon('copy'), 'Copy'), 1500) }
+  catch { toast('Select the text and copy it') }
+} }, icon('copy'), 'Copy')
+const cmd = (text, getText) => h('div', { class: 'cmd' }, h('pre', {}, text), copyBtn(getText || (() => text)))
+const crumbs = (...parts) => $('#crumbs').replaceChildren(...parts.flatMap((p, i) => (i ? [h('span', {}, '/'), p] : [p])))
+
+// ---- theme ----
+const setTheme = (t) => { document.documentElement.className = t; try { localStorage.setItem('gitdoc.theme', t) } catch {}
+  $('#theme-i').replaceChildren(icon(t === 'dark' ? 'sun' : 'moon')); $('#theme-t').textContent = t === 'dark' ? 'Light mode' : 'Dark mode' }
+$('#theme').addEventListener('click', () => setTheme(document.documentElement.className === 'dark' ? 'light' : 'dark'))
+setTheme(document.documentElement.className === 'light' ? 'light' : 'dark')
+
+// ---- auth views ----
+function authShell(title, sub, ...body) {
+  return h('div', { class: 'auth-card' },
+    h('img', { class: 'logo on-dark', src: '/logo-on-dark.svg', alt: 'GitDoc' }),
+    h('img', { class: 'logo on-light', src: '/logo-on-light.svg', alt: 'GitDoc' }),
+    h('h2', {}, title), h('p', { class: 'sub' }, sub), ...body)
+}
+function viewSetup() {
+  const err = h('div'); let busy = false
+  const token = h('input', { type: 'password', autocomplete: 'off', placeholder: 'PUBLISH_TOKEN' })
+  const pw = h('input', { type: 'password', autocomplete: 'new-password', placeholder: 'At least 10 characters' })
+  const go = async (e) => {
+    e.preventDefault(); if (busy) return; busy = true; err.replaceChildren()
+    try { await api('/admin/api/setup', { method: 'POST', body: { token: token.value, password: pw.value } })
+      state.needsSetup = false; state.authenticated = true; location.hash = '#/connect'; route() }
+    catch (x) { err.replaceChildren(notice('err', x.message)) }
+    busy = false
+  }
+  return authShell('Welcome to GitDoc', 'Create the password for this admin panel.',
+    h('form', { class: 'card', onsubmit: go },
+      h('label', {}, 'Server token'), token,
+      h('p', { class: 'muted', style: 'margin:6px 0 0;font-size:12px' }, 'Proves you control this server: it is the PUBLISH_TOKEN you started it with.'),
+      h('label', {}, 'Admin password'), pw, err,
+      h('button', { class: 'primary', type: 'submit', style: 'width:100%;justify-content:center;margin-top:18px' }, 'Continue')))
+}
+function viewLogin() {
+  const err = h('div'); const pw = h('input', { type: 'password', autocomplete: 'current-password', autofocus: true })
+  const go = async (e) => { e.preventDefault(); err.replaceChildren()
+    try { await api('/admin/api/login', { method: 'POST', body: { password: pw.value } }); state.authenticated = true; route() }
+    catch (x) { err.replaceChildren(notice('err', x.message)) } }
+  return authShell('Sign in', 'GitDoc admin',
+    h('form', { class: 'card', onsubmit: go }, h('label', {}, 'Password'), pw, err,
+      h('button', { class: 'primary', type: 'submit', style: 'width:100%;justify-content:center;margin-top:18px' }, 'Sign in')))
+}
+
+// ---- connect ----
+const savedUrl = () => { try { return localStorage.getItem('gitdoc.publicUrl') } catch { return null } }
+const publicUrl = () => savedUrl() || state.publicUrl || `${location.protocol}//${location.hostname}:8080`
+const siteUrl = (host) => /\.localhost$/.test(host) ? `${new URL(publicUrl()).protocol}//${host}:${new URL(publicUrl()).port || 80}` : `https://${host}`
+async function viewConnect() {
+  crumbs(h('b', {}, 'Connect'))
+  const url = h('input', { value: publicUrl(), placeholder: 'https://docs.example.com' })
+  let token = null, shown = false
+  const getToken = async () => token ?? (token = (await api('/admin/api/token')).token)
+  const cmds = h('div')
+  const draw = async (reveal) => {
+    const base = url.value.trim().replace(/\/+$/, '')
+    try { localStorage.setItem('gitdoc.publicUrl', base) } catch {}
+    const t = await getToken()
+    cmds.replaceChildren(h('ol', { class: 'steps' },
+      h('li', {}, h('h3', {}, 'Install the CLI'), cmd('npm install -g gitdoc-cli')),
+      h('li', {}, h('h3', {}, 'Connect it to this server'),
+        h('p', { class: 'muted', style: 'margin:0' }, 'The token is saved in your user configuration, never in the project.'),
+        cmd(`gitdoc connect ${base} --token ${reveal ? t : '<your PUBLISH_TOKEN>'}`, () => `gitdoc connect ${base} --token ${t}`),
+        btn(shown ? 'Hide token' : 'Show token', 'key', { class: 'ghost', onclick: () => { shown = !shown; draw(shown) } })),
+      h('li', {}, h('h3', {}, 'Create your docs and publish'),
+        cmd('gitdoc init my-docs --name "My Docs"\ngitdoc dev my-docs        # live preview\ngitdoc publish my-docs    # send it to this server')),
+      h('li', {}, h('h3', {}, 'Let your AI assistant write them'),
+        h('p', { class: 'muted', style: 'margin:0' }, 'Installs a skill so Claude Code (and others, through AGENTS.md) knows the format and how to publish. You edit by chatting; this panel is only for administration.'),
+        cmd('gitdoc setup')),
+      h('li', {}, h('h3', {}, 'Optional: let agents read the published docs'),
+        cmd(`claude mcp add --transport http docs ${base}/api/mcp`))))
+  }
+  url.addEventListener('change', () => draw(shown))
+  await draw(false)
+  return h('div', {}, h('h2', {}, 'Connect'), h('p', { class: 'sub' }, 'Everything you need to start publishing to this server.'),
+    h('div', { class: 'card' }, h('h3', {}, 'Public address of this server'),
+      h('p', { class: 'muted', style: 'margin:0 0 8px' }, 'Where readers and the CLI reach it: the port or domain that serves the docs, not this admin port.'), url),
+    h('div', { class: 'card' }, cmds))
+}
+
+// ---- server ----
+async function viewInstance() {
+  crumbs(h('b', {}, 'Server'))
+  const i = await api('/admin/api/instance')
+  const row = (ic, k, v, kind, hint) => h('div', { class: 'kv' }, h('div', { class: 'ico' }, icon(ic)),
+    h('div', { class: 'grow' }, h('div', {}, k), hint && h('div', { class: 'muted', style: 'font-size:12px' }, hint)),
+    h('span', { class: 'badge ' + (kind || '') }, kind && h('span', { class: 'dot' }), v))
+  const cur = h('input', { type: 'password', autocomplete: 'current-password' }), nw = h('input', { type: 'password', autocomplete: 'new-password' })
+  const out = h('div')
+  return h('div', {}, h('h2', {}, 'Server'), h('p', { class: 'sub' }, 'How this installation is configured. Secrets are never shown.'),
+    h('div', { class: 'card' },
+      row('globe', 'Publishing', i.publishEnabled ? 'Enabled' : 'Disabled', i.publishEnabled ? 'ok' : 'warn', i.publishEnabled ? null : 'Set PUBLISH_TOKEN'),
+      row('search', 'Search', i.search.error ? 'Misconfigured' : i.search.backend + (i.search.opensearchHost ? ' · ' + i.search.opensearchHost : ''), i.search.error ? 'warn' : 'ok', i.search.error),
+      row('file', 'Meaning-based search', i.ai.embeddingModel || 'Off', i.ai.embeddingModel ? 'ok' : '', i.ai.embeddingModel ? null : 'Set AI_URL and AI_EMBEDDING_MODEL'),
+      row('chat', 'Assistant (Ask)', i.ai.chatModel ? i.ai.chatModel + ' · ' + i.ai.host : 'Off', i.ai.chatModel ? 'ok' : '', i.ai.chatModel ? null : 'Set AI_URL and AI_CHAT_MODEL'),
+      row('gauge', 'Analytics events', i.events === 'off' ? 'Off' : i.events, i.events === 'off' ? '' : 'ok'),
+      row('shield', 'Behind a trusted proxy', i.trustProxy ? 'Yes' : 'No', '', i.trustProxy ? null : 'Set TRUST_PROXY=true behind a CDN')),
+    h('div', { class: 'card' }, h('h3', {}, 'Change the admin password'),
+      h('label', {}, 'Current password'), cur, h('label', {}, 'New password'), nw, out,
+      h('div', { style: 'margin-top:16px' }, btn('Change password', null, { class: 'primary', onclick: async () => { out.replaceChildren()
+        try { await api('/admin/api/password', { method: 'POST', body: { current: cur.value, password: nw.value } })
+          cur.value = nw.value = ''; out.append(notice('ok', 'Password changed.')) }
+        catch (x) { out.append(notice('err', x.message)) } } }))))
+}
+
+// ---- sites ----
+async function viewSites() {
+  crumbs(h('b', {}, 'Sites'))
+  const { sites } = await api('/api/sites')
+  if (!sites.length) {
+    const ic = h('div', { class: 'ico' }); ic.append(icon('globe'))
+    return h('div', {}, h('h2', {}, 'Sites'), h('p', { class: 'sub' }, 'The documentation this server hosts.'),
+      h('div', { class: 'card empty' }, ic, h('h3', {}, 'Nothing published yet'),
+        h('p', { class: 'muted' }, 'Publish a documentation from your computer and it will show up here.'),
+        h('a', { href: '#/connect' }, 'Show me how to connect →')))
+  }
+  return h('div', {}, h('h2', {}, 'Sites'), h('p', { class: 'sub' }, `${sites.length} documentation${sites.length > 1 ? 's' : ''} on this server.`),
+    h('div', { class: 'card list' }, sites.map((s) => {
+      const ic = h('div', { class: 'ico' }); ic.append(icon(s.private ? 'lock' : 'globe'))
+      return h('a', { class: 'item', href: '#/site/' + encodeURIComponent(s.hostname) }, ic,
+        h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, s.name || s.hostname), h('div', { class: 'muted' }, `${s.hostname} · ${s.pages} page${s.pages === 1 ? '' : 's'}`)),
+        h('span', { class: 'badge ' + (s.private ? 'warn' : 'ok') }, h('span', { class: 'dot' }), s.private ? 'Private' : 'Public'),
+        h('span', { class: 'badge' }, 'search · ' + s.search.backend + (s.search.vectors ? ' + vectors' : '')), icon('chev'))
+    })))
+}
+
+// ---- one site ----
+const callback = (host) => `${/(^|\.)localhost$|^127\.|^\d+\.\d+\.\d+\.\d+$/.test(host) ? 'http' : 'https'}://${host}/api/auth/oidc/callback`
+const TABS = [['overview', 'Overview', 'layout'], ['access', 'Access', 'lock'], ['quotas', 'Quotas', 'gauge'], ['connect', 'Connect', 'plug']]
+async function viewSite(host, tab) {
+  const [{ sites }, cfg] = await Promise.all([api('/api/sites'), api('/api/settings?hostname=' + encodeURIComponent(host))])
+  const site = sites.find((s) => s.hostname === host)
+  crumbs(h('a', { href: '#/sites' }, 'Sites'), h('b', {}, site?.name || host))
+  if (!site) return h('div', {}, notice('err', 'This site is not published (any more).'), h('a', { href: '#/sites' }, 'Back to sites'))
+  const base = '#/site/' + encodeURIComponent(host)
+  const head = h('div', {},
+    h('div', { class: 'row', style: 'margin-bottom:4px' }, h('h2', { class: 'grow', style: 'margin:0' }, site.name || host),
+      h('span', { class: 'badge ' + (site.private ? 'warn' : 'ok') }, h('span', { class: 'dot' }), site.private ? 'Private' : 'Public')),
+    h('p', { class: 'sub', style: 'margin-bottom:18px' }, h('a', { href: siteUrl(host), target: '_blank', rel: 'noopener' }, host), ' ', icon('ext')),
+    h('div', { class: 'tabs' }, TABS.map(([k, t, ic]) => h('a', { href: base + '/' + k, class: tab === k ? 'on' : '' }, icon(ic), t))))
+  const save = async (settings, out) => {
+    out.replaceChildren()
+    try { await api('/api/settings?hostname=' + encodeURIComponent(host), { method: 'PUT', body: settings }); toast('Saved. It applies within seconds.') }
+    catch (x) { out.append(notice('err', x.message)) }
+  }
+
+  if (tab === 'access') {
+    const a = cfg.settings.auth || {}
+    let enabled = !!a.enabled
+    const providers = (a.providers || []).map((p) => ({ ...p }))
+    const allow = a.allow || {}
+    const out = h('div'), list = h('div')
+    const f = (obj, key, label, type, ph) => h('div', {}, h('label', {}, label),
+      h('input', { type: type || 'text', value: obj[key] ?? '', placeholder: ph || '', autocomplete: 'off', oninput: (e) => (obj[key] = e.target.value) }))
+    const NAMES = { password: ['Shared password', 'key'], oidc: ['OpenID Connect', 'shield'], gitdocai: ['GitDocAI account', 'lock'] }
+    const draw = () => {
+      list.replaceChildren(...providers.map((p, i) => h('div', { class: 'provider' },
+        h('div', { class: 'row', style: 'margin-bottom:2px' }, h('div', { class: 'ico' }, icon(NAMES[p.type][1])),
+          h('strong', { class: 'grow' }, NAMES[p.type][0]),
+          btn('Remove', 'trash', { class: 'danger ghost', onclick: () => { providers.splice(i, 1); draw() } })),
+        f(p, 'name', 'Button label', 'text', p.type === 'password' ? 'Team password' : p.type === 'oidc' ? 'Okta' : 'GitDocAI'),
+        p.type === 'password' && f(p, 'password', p.password === '***' ? 'Password (leave it to keep the current one)' : 'Password', 'password', 'At least 8 characters'),
+        p.type === 'oidc' && [f(p, 'issuer', 'Issuer URL', 'url', 'https://acme.okta.com'), f(p, 'client_id', 'Client ID'),
+          f(p, 'client_secret', p.client_secret === '***' ? 'Client secret (leave it to keep the current one)' : 'Client secret', 'password'),
+          h('p', { class: 'muted', style: 'margin:10px 0 0' }, 'Register this redirect URI at your provider: ', h('code', {}, callback(host)))],
+        p.type === 'gitdocai' && [f(p, 'iam_url', 'IAM URL', 'url', 'https://iam.example.com'), f(p, 'issuer', 'Token issuer (optional)')])))
+    }
+    const add = (type) => { const n = providers.filter((p) => p.type === type).length + 1
+      providers.push({ id: n > 1 ? `${type}-${n}` : type, type, name: '' }); draw() }
+    draw()
+    const csv = (k, ph) => h('input', { value: (allow[k] || []).join(', '), placeholder: ph })
+    const fields = { email_domains: csv('email_domains', 'acme.com'), emails: csv('emails', 'ana@example.org'), groups: csv('groups', 'docs-readers') }
+    const hours = h('input', { type: 'number', min: '1', value: a.session_hours || 24 })
+    const toggle = h('input', { type: 'checkbox', checked: enabled, onchange: (e) => (enabled = e.target.checked) })
+    return h('div', {}, head,
+      h('div', { class: 'card' }, h('label', { class: 'switch', style: 'margin:0' }, toggle,
+        h('div', {}, h('div', { style: 'font-weight:600' }, 'Require readers to sign in'),
+          h('div', { class: 'muted', style: 'font-weight:400' }, 'Makes this documentation private: pages, search, the assistant and MCP.')))),
+      h('div', { class: 'card' }, h('h3', {}, 'Sign-in methods'),
+        h('p', { class: 'muted', style: 'margin:0 0 14px' }, 'Each one becomes an option on the login page.'), list,
+        h('div', { class: 'add' }, btn('Shared password', 'plus', { onclick: () => add('password') }),
+          btn('OpenID Connect', 'plus', { onclick: () => add('oidc') }), btn('GitDocAI account', 'plus', { onclick: () => add('gitdocai') }))),
+      h('div', { class: 'card' }, h('h3', {}, 'Who may read'),
+        h('p', { class: 'muted', style: 'margin:0' }, 'For OpenID Connect and GitDocAI sign-ins. Leave empty to admit anyone the provider vouches for; matching any one is enough.'),
+        h('label', {}, 'Email domains (comma separated)'), fields.email_domains,
+        h('label', {}, 'Individual emails'), fields.emails,
+        h('label', {}, 'Groups (from the provider’s groups claim)'), fields.groups,
+        h('label', {}, 'Session length (hours)'), hours),
+      out,
+      btn('Save access settings', null, { class: 'primary', onclick: () => {
+        const split = (el) => el.value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean)
+        const clean = providers.map((p) => { const q = { ...p }; for (const k of Object.keys(q)) if (q[k] === '') delete q[k]; return q })
+        save({ ...cfg.settings, auth: { enabled, providers: clean,
+          allow: { email_domains: split(fields.email_domains), emails: split(fields.emails), groups: split(fields.groups) },
+          session_hours: Number(hours.value) || 24 } }, out) } }))
+  }
+
+  if (tab === 'quotas') {
+    const q = cfg.settings.quota || {}, eff = cfg.effective.quota
+    const items = [['ask_per_day', 'Assistant questions per day', 'whole documentation'], ['ask_per_month', 'Assistant questions per month', 'whole documentation'],
+      ['ask_per_min_per_visitor', 'Assistant questions per minute', 'per visitor'], ['search_per_min_per_visitor', 'Searches per minute', 'per visitor']]
+    const ctl = {}, out = h('div')
+    const rows = items.map(([k, label, scope]) => {
+      const mode = h('select', {}, h('option', { value: 'default' }, `Server default (${eff[k] === null ? 'no limit' : eff[k]})`),
+        h('option', { value: 'unlimited' }, 'No limit'), h('option', { value: 'custom' }, 'Custom'))
+      const num = h('input', { type: 'number', min: '0', style: 'margin-top:8px' })
+      const cur = k in q ? (q[k] === null ? 'unlimited' : 'custom') : 'default'
+      mode.value = cur; if (cur === 'custom') num.value = q[k]
+      const sync = () => (num.hidden = mode.value !== 'custom'); mode.addEventListener('change', sync); sync()
+      ctl[k] = { mode, num }
+      return h('div', {}, h('label', {}, label, h('span', { class: 'muted', style: 'font-weight:400' }, ' · ' + scope)), mode, num)
+    })
+    const u = site.usage
+    return h('div', {}, head,
+      h('div', { class: 'grid' },
+        h('div', { class: 'stat' }, h('div', { class: 'k' }, icon('chat'), 'Questions today'), h('b', {}, String(u.ask_today)), h('small', {}, 'UTC day')),
+        h('div', { class: 'stat' }, h('div', { class: 'k' }, icon('chat'), 'Questions this month'), h('b', {}, String(u.ask_this_month)), h('small', {}, u.month))),
+      h('div', { class: 'card' }, h('h3', {}, 'Limits'), rows,
+        h('p', { class: 'muted', style: 'margin:16px 0 0' }, '0 closes the assistant. Changes apply within seconds, with no restart.')),
+      out, btn('Save quotas', null, { class: 'primary', onclick: () => {
+        const quota = {}
+        for (const [k] of items) { const { mode, num } = ctl[k]
+          if (mode.value === 'unlimited') quota[k] = null
+          else if (mode.value === 'custom') quota[k] = num.value === '' ? 0 : Number(num.value) }
+        save({ ...cfg.settings, quota }, out) } }))
+  }
+
+  if (tab === 'connect') {
+    const url = siteUrl(host)
+    return h('div', {}, head, h('div', { class: 'card' },
+      h('h3', {}, 'Publish to this site'), cmd(`gitdoc publish my-docs --hostname ${host}`),
+      h('h3', { style: 'margin-top:18px' }, 'Let an agent read it'), cmd(`claude mcp add --transport http docs ${url}/api/mcp`),
+      h('p', { class: 'muted', style: 'margin:14px 0 0' }, 'Every page is also Markdown (add .md to its address), and /llms.txt is a map for models.'),
+      h('p', { style: 'margin:14px 0 0' }, h('a', { href: '#/connect' }, 'Connect a new computer →'))))
+  }
+
+  const out = h('div'), s = site
+  const stat = (ic, k, v, small) => h('div', { class: 'stat' }, h('div', { class: 'k' }, icon(ic), k), h('b', {}, v), small && h('small', {}, small))
+  return h('div', {}, head,
+    h('div', { class: 'grid' },
+      stat('file', 'Published pages', String(s.pages)),
+      stat('lock', 'Access', s.private ? 'Private' : 'Public', s.auth.providers.length ? 'sign-in: ' + s.auth.providers.join(', ') : 'no sign-in configured'),
+      stat('search', 'Search', s.search.backend, s.search.backend === 'embedded'
+        ? `${s.search.indexed} indexed${s.search.vectors ? ' · vectors' + (s.search.model ? ' (' + s.search.model + ')' : '') : ' · text only'}` : 'indexed in OpenSearch'),
+      stat('chat', 'Questions today', String(s.usage.ask_today), s.quota.ask_per_day === null ? 'no daily limit' : 'of ' + s.quota.ask_per_day)),
+    h('div', { class: 'card' }, h('h3', {}, 'Search index'),
+      h('p', { class: 'muted', style: 'margin:0 0 14px' }, 'It is rebuilt every time you publish. Rebuild it by hand if you changed the embeddings model or the search backend.'),
+      out, btn('Rebuild search index', 'refresh', { onclick: async (e) => { const b = e.currentTarget; b.disabled = true; out.replaceChildren()
+        try { const r = await api('/api/reindex?hostname=' + encodeURIComponent(host), { method: 'POST' })
+          const x = r.sites[host]; out.append(notice('ok', `Indexed ${x.indexed} pages${x.semantic ? ' with vectors' : ''}${x.warning ? ' — ' + x.warning : ''}.`)) }
+        catch (x) { out.append(notice('err', x.message)) }
+        b.disabled = false } })))
+}
+
+// ---- router ----
+async function route() {
+  const shell = $('#shell'), auth = $('#auth')
+  if (state.needsSetup || !state.authenticated) {
+    shell.hidden = true; auth.hidden = false
+    return auth.replaceChildren(state.needsSetup ? viewSetup() : viewLogin())
+  }
+  auth.hidden = true; shell.hidden = false
+  const [, page = 'sites', a, b] = location.hash.replace(/^#/, '').split('/')
+  for (const n of document.querySelectorAll('[data-nav]')) n.classList.toggle('on', n.dataset.nav === (page === 'site' ? 'sites' : page))
+  try {
+    const view = page === 'connect' ? await viewConnect()
+      : page === 'instance' ? await viewInstance()
+      : page === 'site' ? await viewSite(decodeURIComponent(a || ''), b || 'overview')
+      : await viewSites()
+    app.replaceChildren(view)
+  } catch (e) { app.replaceChildren(notice('err', e.message)) }
+}
+window.addEventListener('hashchange', route)
+$('#logout').addEventListener('click', async () => { await api('/admin/api/logout', { method: 'POST' }).catch(() => {}); state.authenticated = false; route() })
+;(async () => {
+  Object.assign(state, await fetch('/admin/api/state').then((r) => r.json()))
+  route()
+})()
+</script>
+</body>
+</html>

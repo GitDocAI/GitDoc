@@ -1,0 +1,99 @@
+---
+/**
+ * Left-side navigation. Renders the entry tree as a flat list of
+ * indented rows server side — zero JS. Clicking a link triggers a
+ * normal browser navigation which the Worker serves SSR in ~50ms
+ * (edge + R2 cached).
+ *
+ * Flattening at SSR avoids recursive Astro components (which get
+ * awkward) and keeps the DOM simple. Depth-based indentation
+ * preserves the visual tree.
+ */
+import type { DocEntry } from '@/types/documentation.types'
+
+interface Props {
+  tree: DocEntry[]
+  sectionSlug: string
+  /** id of the currently-rendered entry (for highlighting). */
+  currentEntryId: string | null
+}
+
+const { tree, sectionSlug, currentEntryId } = Astro.props
+
+interface FlatNode {
+  id: string
+  title: string
+  href: string
+  type: 'page' | 'folder'
+  depth: number
+}
+
+// Walk the tree into an indented flat list. Folder rows use a non-
+// interactive label; page rows are anchor tags linking to the fully-
+// qualified slug path.
+function flatten(
+  nodes: DocEntry[],
+  prefix: string[],
+  depth: number,
+  out: FlatNode[] = [],
+): FlatNode[] {
+  for (const node of nodes) {
+    const path = [...prefix, node.slug]
+    out.push({
+      id: node.id,
+      title: node.title,
+      href: `/${sectionSlug}/${path.join('/')}`,
+      type: node.type,
+      depth,
+    })
+    if (node.children?.length) flatten(node.children, path, depth + 1, out)
+  }
+  return out
+}
+
+const flat = flatten(tree, [], 0)
+---
+
+<aside
+  class="doc-sidebar flex flex-col w-64 shrink-0 border-r bg-background overflow-y-auto"
+  aria-label="Documentation navigation"
+>
+  <nav class="py-4 px-2">
+    <ul class="space-y-0.5 list-none m-0 p-0">
+      {
+        flat.map((node) => {
+          const isActive = node.id === currentEntryId
+          const padLeft = 12 + node.depth * 16
+          if (node.type === 'folder') {
+            return (
+              <li
+                class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-4 mb-1 px-3"
+                style={{ paddingLeft: `${padLeft}px` }}
+              >
+                {node.title}
+              </li>
+            )
+          }
+          return (
+            <li>
+              <a
+                href={node.href}
+                data-active-page={isActive ? '' : null}
+                class:list={[
+                  'flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors no-underline',
+                  isActive
+                    ? 'bg-accent/10 text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                ]}
+                style={{ paddingLeft: `${padLeft}px` }}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <span class="truncate">{node.title}</span>
+              </a>
+            </li>
+          )
+        })
+      }
+    </ul>
+  </nav>
+</aside>

@@ -1,0 +1,31 @@
+{
+  "name": "@gitdocai/ui",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Parser, serializer and presenters used to render documentation pages.",
+  "exports": {
+    "./styles.css": "./dist/styles.css"
+  },
+  "scripts": {
+    "build": "node scripts/build-css.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@heroicons/react": "^2.2.0",
+    "axios": "^1.13.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remark-gemoji": "^8.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-mdx": "^3.1.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "~5.6.2"
+  }
+}

@@ -1,0 +1,582 @@
+---
+import { ClientRouter } from 'astro:transitions'
+import '../index.css'
+import '@gitdocai/ui/styles.css'
+import '../publish-content.css'
+import '../lightbox.css'
+import '../theme-toggle.css'
+import '../sidebar.css'
+
+interface ThemeColors {
+  bg_color?: string
+  text_color?: string
+  accent_color?: string
+}
+
+interface Props {
+  title: string
+  description?: string
+  /** Absolute URL for the canonical link + OG URL. */
+  canonicalUrl?: string
+  /** schema.org structured data injected as application/ld+json. */
+  jsonLd?: object
+  /** Absolute image URL used for OG/Twitter previews. */
+  ogImage?: string
+  /** The docs site name, used for og:site_name. */
+  siteName?: string
+  /** "dark" | "light" — picks the initial theme class on <html>. */
+  defaultThemeMode?: 'dark' | 'light'
+  /** Resolved /assets/<uuid> URL of the doc's favicon, or undefined. */
+  faviconUrl?: string
+  /** Per-doc theme values from the gitdocai.json manifest. Injected
+   *  as CSS variables that override the defaults in index.css so each
+   *  customer's site renders with their own palette + font. */
+  themeDark?: ThemeColors
+  themeLight?: ThemeColors
+  /** Web-safe family name. Google Fonts named families also get
+   *  preloaded via `<link>`. */
+  fontFamily?: string
+  /** Optional override applied only to h1-h6. When unset, headings
+   *  inherit `fontFamily`. */
+  headingFont?: string
+  /** Corner-radius scale from the resolved preset — drives `data-shape`
+   *  on `<html>`. Defaults to "soft". */
+  shape?: 'sharp' | 'soft' | 'round'
+}
+
+const {
+  title,
+  description,
+  canonicalUrl,
+  jsonLd,
+  ogImage,
+  siteName,
+  defaultThemeMode = 'light',
+  faviconUrl,
+  themeDark,
+  themeLight,
+  fontFamily,
+  headingFont,
+  shape = 'soft',
+} = Astro.props
+
+/* Build the per-doc CSS overrides. We emit color tokens for both
+   modes regardless of `default`, so the toggle (when we wire it up)
+   flips classes without re-fetching styles. */
+const overrideRules: string[] = []
+function rule(selector: string, vars: Array<[string, string | undefined]>) {
+  const decls = vars
+    .filter(([, v]) => Boolean(v))
+    .map(([k, v]) => `  ${k}: ${v};`)
+    .join('\n')
+  if (decls) overrideRules.push(`${selector} {\n${decls}\n}`)
+}
+/* `html:root` (not bare `:root`) so the override beats the
+   `_all_.css` bundle's own `:root` block, which Astro emits AFTER
+   this <style> in the cascade. Dark mode already wins because its
+   `html.dark` selector is more specific than `.dark`. */
+rule('html:root', [
+  ['--background', themeLight?.bg_color],
+  ['--foreground', themeLight?.text_color],
+  ['--primary', themeLight?.accent_color],
+  ['--ring', themeLight?.accent_color],
+  ['--accent-color', themeLight?.accent_color],
+  ['--font-sans', fontFamily ? `'${fontFamily}', system-ui, -apple-system, sans-serif` : undefined],
+  /* Heading-only override (Group 1 of the SSG wiring). When the
+     manifest doesn't set it, --font-heading defaults to var(--font-sans)
+     via index.css and headings inherit the body family. */
+  ['--font-heading', headingFont ? `'${headingFont}', var(--font-sans)` : undefined],
+])
+rule('html.dark', [
+  ['--background', themeDark?.bg_color],
+  ['--foreground', themeDark?.text_color],
+  ['--primary', themeDark?.accent_color],
+  ['--ring', themeDark?.accent_color],
+  ['--accent-color', themeDark?.accent_color],
+])
+const themeCss = overrideRules.join('\n')
+
+/* A handful of common Google Fonts come from one URL. If the family
+   isn't on this list we still set CSS font-family — the user just
+   needs to either host the font themselves or it falls back to the
+   system stack. */
+/* Mirrors the dashboard's `FontPicker.FONT_OPTIONS` minus the system/
+   CDN-hosted fonts (`SF Pro Display`, `Geist`) which aren't on the
+   Google Fonts CDN. Without an entry here the font silently falls
+   back to the system stack at render time. */
+const KNOWN_GOOGLE_FONTS = new Set([
+  // Sans
+  'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins',
+  'Source Sans 3', 'Source Sans Pro', 'Nunito', 'Raleway', 'Ubuntu',
+  'Work Sans', 'Plus Jakarta Sans', 'DM Sans', 'Manrope', 'Outfit',
+  'IBM Plex Sans', 'Instrument Sans',
+  // Serif
+  'Playfair Display', 'Merriweather', 'Lora', 'PT Serif',
+  'Source Serif Pro', 'Crimson Text', 'Libre Baskerville',
+  // Mono
+  'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'IBM Plex Mono',
+  'Roboto Mono',
+])
+/* Build one Google Fonts URL that loads both the body and heading
+   families when each is on the known list. Multiple `family=` params
+   are how Google Fonts lets us batch families into a single round-
+   trip; we keep the wght range identical so the URL stays cacheable
+   across docs that pick the same fonts. */
+const googleFamilies: string[] = []
+if (fontFamily && KNOWN_GOOGLE_FONTS.has(fontFamily)) googleFamilies.push(fontFamily)
+if (
+  headingFont &&
+  KNOWN_GOOGLE_FONTS.has(headingFont) &&
+  headingFont !== fontFamily
+) googleFamilies.push(headingFont)
+const googleFontHref = googleFamilies.length > 0
+  ? `https://fonts.googleapis.com/css2?${googleFamilies
+      .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400;500;600;700`)
+      .join('&')}&display=swap`
+  : null
+---
+
+<!doctype html>
+<html
+  lang="en"
+  class={defaultThemeMode === 'dark' ? 'dark' : ''}
+  data-shape={shape}
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    {faviconUrl && (
+      <link
+        rel="icon"
+        href={faviconUrl}
+        type={faviconUrl.endsWith('.svg') ? 'image/svg+xml' : undefined}
+        transition:persist="favicon"
+      />
+    )}
+
+    {googleFontHref && (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href={googleFontHref} />
+      </>
+    )}
+
+    <!-- Per-doc theme overrides from the manifest. Loaded AFTER the
+         base CSS (which sets oklch defaults in index.css) so the
+         customer's hex colors win. -->
+    {themeCss && <style set:html={themeCss} />}
+
+    <!-- Icon-font stylesheets (PrimeIcons, FontAwesome 4, Material
+         Icons). Loaded non-blocking via preload→stylesheet swap so they
+         stay off the critical render path — icons paint a beat after the
+         text rather than blocking FCP. <noscript> keeps them working
+         without JS. Served as static assets so Lightning CSS doesn't
+         strip the unicode escapes (`\e0a4`) that define each glyph.
+
+         `transition:persist` is REQUIRED: the onload handler mutates the
+         live element to `rel="stylesheet"`, so on a ClientRouter swap it
+         no longer matches the incoming page's `rel="preload"` link and
+         the router would re-insert + re-fetch all three on every
+         navigation (304s) AND block the swap waiting for them — killing
+         the instant transition. Persisting keeps the loaded element in
+         place across swaps, so they're fetched exactly once. -->
+    <link rel="preload" as="style" href="/vendor/primeicons.css" onload="this.onload=null;this.rel='stylesheet'" transition:persist="icons-primeicons" />
+    <link rel="preload" as="style" href="/vendor/font-awesome/css/font-awesome.min.css" onload="this.onload=null;this.rel='stylesheet'" transition:persist="icons-font-awesome" />
+    <link rel="preload" as="style" href="/vendor/material-icons/material-icons.css" onload="this.onload=null;this.rel='stylesheet'" transition:persist="icons-material" />
+    <noscript>
+      <link rel="stylesheet" href="/vendor/primeicons.css" />
+      <link rel="stylesheet" href="/vendor/font-awesome/css/font-awesome.min.css" />
+      <link rel="stylesheet" href="/vendor/material-icons/material-icons.css" />
+    </noscript>
+
+    <!-- Theme preference applied BEFORE first paint to avoid a flash of
+         the wrong theme. Inlined (not an external src) so it can't be a
+         render-blocking request; this is the source of truth. -->
+    <script is:inline>
+      ;(function () {
+        if (typeof document === 'undefined') return
+        const KEY = 'gitdocai-theme'
+        function applyStored() {
+          try {
+            const stored = localStorage.getItem(KEY)
+            if (stored === 'dark') document.documentElement.classList.add('dark')
+            else if (stored === 'light') document.documentElement.classList.remove('dark')
+          } catch {}
+        }
+        applyStored()
+        document.addEventListener('astro:after-swap', applyStored)
+        function toggle() {
+          const dark = !document.documentElement.classList.contains('dark')
+          document.documentElement.classList.toggle('dark', dark)
+          try { localStorage.setItem(KEY, dark ? 'dark' : 'light') } catch {}
+        }
+        document.addEventListener('click', (e) => {
+          const target = e.target
+          if (!(target instanceof Element)) return
+          if (!target.closest('[data-theme-toggle]')) return
+          e.preventDefault()
+          toggle()
+        })
+      })()
+    </script>
+
+    <!-- Sidebar width restored from localStorage before paint so the
+         layout doesn't snap from 256px. Inlined for the same reason as
+         the theme script; this is the source of truth. -->
+    <script is:inline>
+      ;(function () {
+        if (typeof document === 'undefined') return
+        const KEY = 'gitdocai-sidebar-width'
+        const MIN = 200, MAX = 480, DEFAULT = 256
+        function readStoredWidth() {
+          try {
+            const v = parseInt(localStorage.getItem(KEY) || '', 10)
+            if (Number.isFinite(v) && v >= MIN && v <= MAX) return v
+          } catch {}
+          return DEFAULT
+        }
+        function applyWidth(w) {
+          document.documentElement.style.setProperty('--sidebar-width', w + 'px')
+        }
+        applyWidth(readStoredWidth())
+        let dragging = false, startX = 0, startWidth = 0
+        function onMouseMove(e) {
+          if (!dragging) return
+          e.preventDefault()
+          applyWidth(Math.max(MIN, Math.min(MAX, startWidth + (e.clientX - startX))))
+        }
+        function onMouseUp() {
+          if (!dragging) return
+          dragging = false
+          document.body.style.cursor = ''
+          document.body.style.userSelect = ''
+          const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'), 10)
+          if (Number.isFinite(w)) { try { localStorage.setItem(KEY, String(w)) } catch {} }
+          window.removeEventListener('mousemove', onMouseMove)
+          window.removeEventListener('mouseup', onMouseUp)
+        }
+        document.addEventListener('mousedown', (e) => {
+          const target = e.target
+          if (!(target instanceof Element)) return
+          if (!target.closest('[data-sidebar-resize]')) return
+          e.preventDefault()
+          dragging = true
+          startX = e.clientX
+          const current = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'), 10)
+          startWidth = Number.isFinite(current) ? current : DEFAULT
+          document.body.style.cursor = 'col-resize'
+          document.body.style.userSelect = 'none'
+          window.addEventListener('mousemove', onMouseMove)
+          window.addEventListener('mouseup', onMouseUp)
+        })
+        document.addEventListener('astro:after-swap', () => applyWidth(readStoredWidth()))
+      })()
+    </script>
+
+    <!-- Sidebar scroll position persistence. Same section across navigations
+         keeps its scroll; switching sections resets to top. Runs on every
+         ClientRouter swap via astro:page-load. -->
+    <script is:inline>
+      ;(function () {
+        if (typeof document === 'undefined') return
+        const KEY = 'gitdocai-sidebar-scroll'
+        function read() {
+          try {
+            const raw = localStorage.getItem(KEY)
+            if (!raw) return null
+            const v = JSON.parse(raw)
+            if (v && typeof v.sectionId === 'string' && typeof v.scroll === 'number') return v
+          } catch {}
+          return null
+        }
+        function write(sectionId, scroll) {
+          try { localStorage.setItem(KEY, JSON.stringify({ sectionId, scroll })) } catch {}
+        }
+        function init() {
+          const nav = document.querySelector('[data-sidebar-scroll]')
+          if (!nav) return
+          const sectionId = nav.getAttribute('data-section-id') || ''
+          const stored = read()
+          if (stored && stored.sectionId === sectionId) {
+            nav.scrollTop = stored.scroll
+          } else {
+            nav.scrollTop = 0
+            write(sectionId, 0)
+          }
+          let raf = 0
+          nav.addEventListener('scroll', () => {
+            if (raf) return
+            raf = requestAnimationFrame(() => {
+              raf = 0
+              write(sectionId, nav.scrollTop)
+            })
+          }, { passive: true })
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', init, { once: true })
+        } else {
+          init()
+        }
+        document.addEventListener('astro:page-load', init)
+      })()
+    </script>
+
+    <!-- Mobile sidebar drawer toggle. Deferred — the hamburger only
+         matters after paint, so it stays off the critical path. -->
+    <script is:inline src="/sidebar-drawer.js" defer></script>
+
+    <!-- Responsive guard for inline-nav presets (Pearl/Onyx/Jade): if
+         the navbar's clusters don't fit at the current width, swap
+         to the mobile chrome (hamburger + kebab + subbar). -->
+    <script is:inline src="/header-compact.js" defer></script>
+
+    <!-- Image lightbox hydration. `defer` keeps it out of the critical
+         path (article HTML renders first); the script attaches a click
+         listener that intercepts `<a data-lightbox>` activations. -->
+    <script src="/lightbox.js" defer></script>
+
+    <!-- Tabs switcher — pairs with `.tabs-block`. Defer so the article
+         HTML paints first; the bodies show the initial active tab
+         immediately via inline display:none on non-active ones. -->
+    <script src="/tabs.js" defer></script>
+
+    <!-- Code copy button hydration — pairs with `[data-code-copy]`. -->
+    <script src="/code-copy.js" defer></script>
+
+    <!-- Shared Markdown renderer for AI replies (assistant panel + KB). -->
+    <script src="/md.js" defer></script>
+
+    <!-- Assistant side-panel toggle. Defer is fine — the panel is
+         hidden by default and the user can't click Ask AI until after
+         hydration. -->
+    <script src="/assistant-panel.js" defer></script>
+
+    <!-- Search palette — Cmd/Ctrl+K modal with inline index filter
+         and Ask Assistant handoff. Defer is fine for the same reason
+         the panel is. -->
+    <script src="/search-palette.js" defer></script>
+
+    <!-- Mermaid hydration. Inline ES module so the dynamic-import
+         semantics are unambiguous, and the `astro:page-load` re-run
+         keeps diagrams rendering after view transitions. Self-gates
+         on `pre.mermaid` so pages without diagrams pay nothing. -->
+    <script type="module" is:inline>
+      const CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'
+      let mermaidPromise = null
+
+      /* Color pipeline.
+         Mermaid's color parser doesn't accept oklch (the format our
+         theme uses), so we paint each color into a 1×1 canvas and
+         read it back through getImageData — the browser commits to
+         sRGB ints there, regardless of what color space the input
+         used. `paintRgb` returns [r,g,b]; `paintHex` returns hex.
+         `withAlpha` builds the rgba strings we use for the subtle
+         line/border tints (deriving them from --foreground gives a
+         lot more contrast than --border at 10% alpha). */
+      const colorCanvas = (() => {
+        const c = document.createElement('canvas')
+        c.width = 1
+        c.height = 1
+        return c.getContext('2d', { willReadFrequently: true })
+      })()
+      function paintRgb(value, fallback) {
+        const raw = (value || '').trim()
+        try {
+          colorCanvas.clearRect(0, 0, 1, 1)
+          colorCanvas.fillStyle = raw || fallback
+          colorCanvas.fillRect(0, 0, 1, 1)
+          const d = colorCanvas.getImageData(0, 0, 1, 1).data
+          return [d[0], d[1], d[2]]
+        } catch {
+          colorCanvas.clearRect(0, 0, 1, 1)
+          colorCanvas.fillStyle = fallback
+          colorCanvas.fillRect(0, 0, 1, 1)
+          const d = colorCanvas.getImageData(0, 0, 1, 1).data
+          return [d[0], d[1], d[2]]
+        }
+      }
+      function rgbToHex([r, g, b]) {
+        const h = (n) => n.toString(16).padStart(2, '0')
+        return `#${h(r)}${h(g)}${h(b)}`
+      }
+      function withAlpha([r, g, b], a) {
+        return `rgba(${r}, ${g}, ${b}, ${a})`
+      }
+
+      function themeVars() {
+        const css = getComputedStyle(document.documentElement)
+        const isDark = document.documentElement.classList.contains('dark')
+        const fg = paintRgb(css.getPropertyValue('--foreground'),
+                            isDark ? '#eaeaea' : '#0a0a0a')
+        const bg = paintRgb(css.getPropertyValue('--background'),
+                            isDark ? '#0c0c0c' : '#fafafa')
+        const fgHex = rgbToHex(fg)
+        const bgHex = rgbToHex(bg)
+        return {
+          /* Backgrounds — derived from the page bg so the diagram
+             never has a "card on card" outline against ours. */
+          background: bgHex,
+          mainBkg: withAlpha(fg, 0.05),
+          clusterBkg: withAlpha(fg, 0.03),
+          edgeLabelBackground: bgHex,
+
+          /* Text — full --foreground for legibility, matching the
+             body copy weight. */
+          textColor: fgHex,
+          titleColor: fgHex,
+          primaryTextColor: fgHex,
+          secondaryTextColor: fgHex,
+          tertiaryTextColor: fgHex,
+          nodeTextColor: fgHex,
+
+          /* Node fills — same subtle foreground-tint trick the
+             publish-web palette uses (mainBkg=0.05, secondary=0.03,
+             tertiary=0.08). Auto-adapts to dark/light. */
+          primaryColor: withAlpha(fg, 0.05),
+          secondaryColor: withAlpha(fg, 0.03),
+          tertiaryColor: withAlpha(fg, 0.08),
+
+          /* Borders + edges — 0.20 / 0.30 alpha on foreground
+             instead of --border's 0.10. That's the change that
+             makes diagrams readable; lines were ghosting before. */
+          primaryBorderColor: withAlpha(fg, 0.2),
+          secondaryBorderColor: withAlpha(fg, 0.15),
+          tertiaryBorderColor: withAlpha(fg, 0.1),
+          nodeBorder: withAlpha(fg, 0.2),
+          clusterBorder: withAlpha(fg, 0.1),
+          lineColor: withAlpha(fg, 0.3),
+        }
+      }
+
+      async function getMermaid() {
+        if (!mermaidPromise) {
+          mermaidPromise = import(CDN).then((m) => {
+            const mermaid = m.default
+            mermaid.initialize({
+              startOnLoad: false,
+              securityLevel: 'loose',
+              theme: 'base',
+              themeVariables: themeVars(),
+              fontFamily: 'inherit',
+            })
+            return mermaid
+          })
+        }
+        return mermaidPromise
+      }
+
+      function snapshot() {
+        document.querySelectorAll('pre.mermaid:not([data-mermaid-src])')
+          .forEach((n) => n.setAttribute('data-mermaid-src', n.textContent || ''))
+      }
+
+      async function renderAll() {
+        const nodes = Array.from(
+          document.querySelectorAll('pre.mermaid:not([data-mermaid-rendered])'),
+        )
+        if (nodes.length === 0) return
+        try {
+          const mermaid = await getMermaid()
+          nodes.forEach((n) => n.setAttribute('data-mermaid-rendered', ''))
+          await mermaid.run({ nodes })
+        } catch (err) {
+          console.error('[mermaid] render failed', err)
+          /* Undo the rendered flag so a future retry can try again. */
+          nodes.forEach((n) => n.removeAttribute('data-mermaid-rendered'))
+        }
+      }
+
+      async function rerenderForTheme() {
+        const rendered = document.querySelectorAll('pre.mermaid[data-mermaid-rendered]')
+        if (rendered.length === 0) return
+        const mermaid = await getMermaid()
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'loose',
+          theme: 'base',
+          themeVariables: themeVars(),
+          fontFamily: 'inherit',
+        })
+        rendered.forEach((n) => {
+          const src = n.getAttribute('data-mermaid-src')
+          if (src) {
+            n.removeAttribute('data-processed')
+            n.removeAttribute('data-mermaid-rendered')
+            n.textContent = src
+          }
+        })
+        renderAll()
+      }
+
+      function init() {
+        snapshot()
+        renderAll()
+      }
+
+      init()
+      document.addEventListener('astro:page-load', init)
+
+      /* Let runtime-injected diagrams (AI chat replies in the panel + KB)
+         get picked up — they call this after dropping `pre.mermaid` in. */
+      window.__gitdocaiRenderMermaid = init
+
+      new MutationObserver(() => rerenderForTheme()).observe(
+        document.documentElement,
+        { attributes: true, attributeFilter: ['class'] },
+      )
+    </script>
+
+    <!-- Astro client router: replaces the full-page reload between
+         routes with a fetch + DOM swap, eliminating the "blank flash"
+         and letting the browser keep the already-loaded CSS/JS for
+         the next page. Combined with prefetch (configured in
+         astro.config), navigation feels instant. -->
+    <ClientRouter />
+
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
+
+    {/* schema.org structured data. `<` is escaped so a title/description
+        containing "</script>" can't break out of the tag. */}
+    {jsonLd && (
+      <script
+        type="application/ld+json"
+        set:html={JSON.stringify(jsonLd).replace(/</g, '\\u003c')}
+      />
+    )}
+
+    {/* Open Graph — search engines + link previews on Slack, WhatsApp,
+        etc. The `og:type=article` signals "this is a doc page" rather
+        than a marketing site. */}
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content={title} />
+    {description && <meta property="og:description" content={description} />}
+    {canonicalUrl && <meta property="og:url" content={canonicalUrl} />}
+    {siteName && <meta property="og:site_name" content={siteName} />}
+    {ogImage && <meta property="og:image" content={ogImage} />}
+
+    {/* Twitter Card — summary_large_image gives the richer preview
+        with the OG image alongside the description. Falls back to
+        summary when no image is configured. */}
+    <meta
+      name="twitter:card"
+      content={ogImage ? 'summary_large_image' : 'summary'}
+    />
+    <meta name="twitter:title" content={title} />
+    {description && <meta name="twitter:description" content={description} />}
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
+  </head>
+  <body class="bg-background text-foreground antialiased">
+    {/* `<main>` gives screen readers a landmark to jump to the primary
+        content and satisfies Lighthouse's "main landmark" a11y check.
+        All page content (the React app island + SSR payload scripts)
+        renders inside this element. */}
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
