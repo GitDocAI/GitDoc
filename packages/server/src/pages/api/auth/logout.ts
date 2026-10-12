@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro'
 import { clearSessionCookies } from '../../../lib/auth'
+import { clearSiteSession } from '../../../lib/siteAuth'
 
 export const prerender = false
 
@@ -7,6 +8,7 @@ export const prerender = false
 // "Log out" link works, and POST for programmatic calls.
 const handler: APIRoute = async ({ cookies, redirect }) => {
   clearSessionCookies(cookies)
+  clearSiteSession(cookies)
   return redirect('/', 303)
 }
 

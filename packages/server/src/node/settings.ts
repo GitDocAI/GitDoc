@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro'
 import { timingSafeEqual } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { effectiveQuota, loadSettings, parseSettings, saveSettings } from '../lib/settings'
+import { effectiveQuota, loadSettings, parseSettings, publicSettings, saveSettings } from '../lib/settings'
 import { readUsage } from '../lib/usage'
 
 export const prerender = false
@@ -11,8 +11,9 @@ export const prerender = false
  * Operator API for one site's runtime settings and usage. Node-only;
  * authenticated by PUBLISH_TOKEN.
  *
- *   GET /api/settings?hostname=…   stored settings and the effective quota
- *   PUT /api/settings?hostname=…   replace the stored settings (JSON body)
+ *   GET /api/settings?hostname=…   stored settings (secrets masked) and the effective quota
+ *   PUT /api/settings?hostname=…   replace the stored settings (JSON body); a secret
+ *                                  sent as "***" or omitted keeps its stored value
  *   GET /api/usage?hostname=…      what the site has consumed
  *
  * Settings are not part of the docs (see lib/settings.ts).
@@ -51,7 +52,10 @@ export const GET: APIRoute = async ({ request }) => {
   if (site instanceof Response) return site
   const path = new URL(request.url).pathname
   if (path === '/api/usage') return json(await readUsage(site.docId))
-  return json({ settings: await loadSettings(site.docId), effective: { quota: await effectiveQuota(site.docId) } })
+  return json({
+    settings: publicSettings(await loadSettings(site.docId)),
+    effective: { quota: await effectiveQuota(site.docId) },
+  })
 }
 
 export const PUT: APIRoute = async ({ request }) => {
@@ -61,10 +65,10 @@ export const PUT: APIRoute = async ({ request }) => {
   if (site instanceof Response) return site
   let settings
   try {
-    settings = parseSettings(await request.json())
+    settings = parseSettings(await request.json(), await loadSettings(site.docId))
   } catch (e) {
     return json({ error: (e as Error).message }, 400)
   }
   await saveSettings(site.docId, settings)
-  return json({ ok: true, settings, effective: { quota: await effectiveQuota(site.docId) } })
+  return json({ ok: true, settings: publicSettings(settings), effective: { quota: await effectiveQuota(site.docId) } })
 }

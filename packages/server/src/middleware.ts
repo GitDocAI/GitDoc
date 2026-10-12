@@ -2,6 +2,8 @@ import { defineMiddleware } from 'astro:middleware'
 import { ContentSource, resolveFromRequest } from './lib/contentSource'
 import { verifySession, refreshSession, canAccessDoc, SESSION_COOKIE, REFRESH_COOKIE, type SessionClaims } from './lib/auth'
 import type { DomainMapping } from './lib/types'
+import { loadSettings } from './lib/settings'
+import { SITE_COOKIE, providerVersion, readSiteSession } from './lib/siteAuth'
 
 // The API routes that really exist. They self-gate (401 JSON, never a redirect
 // — a fetch must not be bounced to an HTML login page), so the middleware
@@ -19,6 +21,9 @@ const API_ROUTES = new Set([
   '/api/settings', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/usage', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/auth/login',
+  '/api/auth/password',
+  '/api/auth/oidc/start',
+  '/api/auth/oidc/callback',
   '/api/auth/switch',
   '/api/auth/handoff',
   '/api/auth/logout',
@@ -64,19 +69,46 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const mapping = resolved as DomainMapping
   locals.docMapping = mapping
 
+  // How this site authenticates readers is its operator's setting (see
+  // lib/settings.ts). A `gitdocai` provider points at the hosted IAM; without
+  // one, the instance-wide IAM_URL (if any) keeps working as before.
+  const siteAuth = (await loadSettings(mapping.docId)).auth
+  const providers = siteAuth?.providers ?? []
+  const iamProvider = providers.find((p) => p.type === 'gitdocai')
+  const authEnv = iamProvider
+    ? { ...env, IAM_URL: iamProvider.iam_url, JWT_ISSUER: iamProvider.issuer || iamProvider.iam_url }
+    : env
+  if (iamProvider) locals.runtime = { ...locals.runtime, env: authEnv as typeof env }
+  locals.siteLogin = {
+    providers: providers.map((p) => ({
+      id: p.id,
+      type: p.type,
+      name: p.name || (p.type === 'password' ? 'Password' : p.type === 'oidc' ? 'SSO' : 'GitDocAI'),
+    })),
+    // The email/password + Google form is the IAM's: shown when this site
+    // names a gitdocai provider, or when no provider is set and IAM_URL is.
+    iam: !!iamProvider || (!providers.length && !!authEnv.IAM_URL),
+  }
+
   // Verify any session token up front (locally, via JWKS) so the content
   // routes and the search/ask API can reuse the result without re-checking.
-  let session: SessionClaims | null = null
+  const versions = new Map(providers.filter((p) => p.type !== 'gitdocai').map((p) => [p.id, providerVersion(p)]))
+  let session: SessionClaims | null = readSiteSession(
+    cookies.get(SITE_COOKIE)?.value,
+    mapping.docId,
+    mapping.orgId,
+    (id) => versions.get(id),
+  )
   // A valid JWT minted for a DIFFERENT org. The signature/audience check
   // passed but the token's org doesn't own this doc — that user is signed
   // in to the wrong account, /login would loop them; /no-access is the
   // right destination so they can switch accounts.
   let otherOrgSession: SessionClaims | null = null
   const token = cookies.get(SESSION_COOKIE)?.value
-  if (token) {
-    session = await verifySession(token, env, mapping.orgId)
+  if (token && !session) {
+    session = await verifySession(token, authEnv, mapping.orgId)
     if (!session) {
-      const claims = await verifySession(token, env, '')
+      const claims = await verifySession(token, authEnv, '')
       if (claims && claims.org_id && claims.org_id !== mapping.orgId) {
         otherOrgSession = claims
       }
@@ -89,7 +121,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (!session && !otherOrgSession && mapping.isPrivate) {
     const refresh = cookies.get(REFRESH_COOKIE)?.value
     if (refresh) {
-      session = await refreshSession(refresh, env, cookies, url.protocol === 'https:', mapping.orgId)
+      session = await refreshSession(refresh, authEnv, cookies, url.protocol === 'https:', mapping.orgId)
     }
   }
   locals.session = session

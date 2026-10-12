@@ -32,5 +32,7 @@ declare namespace App {
     docMapping?: import('./lib/types').DomainMapping | null
     session?: import('./lib/auth').SessionClaims | null
     otherOrgSession?: import('./lib/auth').SessionClaims | null
+    // How this site lets readers sign in (public parts only), for /login.
+    siteLogin?: { providers: { id: string; type: 'password' | 'oidc' | 'gitdocai'; name: string }[]; iam: boolean }
   }
 }

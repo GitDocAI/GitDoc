@@ -143,6 +143,36 @@ curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$URL/api/usage?hostname=docs.acm
 
 A change applies within seconds, without a restart. When the allowance is spent, `/api/ask` answers `429` with `{"code": "quota_exceeded", "limit", "period"}`. Counters survive restarts. A hosted control plane uses this same API to apply a plan's limits and to read usage for billing: the engine never calls a billing service per request.
 
+### Private sites: who may read
+
+A site becomes private when its operator turns sign-in on. Like quotas, this is a site setting (secrets included), never part of the docs. The login page offers every provider you list, in order.
+
+```bash
+curl -X PUT -H "Authorization: Bearer $PUBLISH_TOKEN" -H "Content-Type: application/json" \
+  "$URL/api/settings?hostname=docs.acme.com" -d '{
+  "auth": {
+    "enabled": true,
+    "providers": [
+      { "id": "okta", "type": "oidc", "name": "Okta",
+        "issuer": "https://acme.okta.com", "client_id": "…", "client_secret": "…" },
+      { "id": "team", "type": "password", "name": "Team password", "password": "a long shared password" }
+    ],
+    "allow": { "email_domains": ["acme.com"], "emails": ["partner@example.org"], "groups": ["docs-readers"] },
+    "session_hours": 24
+  }
+}'
+```
+
+| Provider | What it is |
+|---|---|
+| `oidc` | Any OpenID Connect provider (Okta, Entra ID, Auth0, Google, Keycloak…): authorization code flow with PKCE. Register `https://<your host>/api/auth/oidc/callback` as the redirect URI. Needs an `email` claim. |
+| `password` | One shared password, stored as a scrypt hash. Changing it ends the sessions made with the old one. Attempts are throttled. |
+| `gitdocai` | The hosted product's IAM: `{ "type": "gitdocai", "iam_url": "https://…" }`. Tokens are verified against its JWKS. |
+
+`allow` applies to `oidc` identities: an email, an email domain, or a group (from the `groups` claim, or `groups_claim`) lets a reader in; with no rules, anyone the provider vouches for is let in. The password is the access, so `allow` does not apply to it.
+
+Secrets are write-only: reading the settings shows `***`, and sending `***` (or omitting it) keeps the stored value. Sessions are signed cookies; set `SESSION_SECRET`, or one is generated into `_secrets/` in the data volume. Behind a proxy, set `TRUST_PROXY=true` so redirect URIs use the right scheme. The same login protects the search, assistant and MCP endpoints.
+
 ## Behind a CDN
 
 The server sends `Cache-Control: public, max-age=60, stale-while-revalidate=600` for public pages and `private, no-store` for private ones, so a CDN in front (Cloudflare, for instance, with a cache rule that respects origin headers) serves most traffic. Set `TRUST_PROXY=true` so rate limits count real visitors and the country in analytics comes from `CF-IPCountry`. Do not set it when the server is reachable without the proxy: those headers can then be forged.

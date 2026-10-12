@@ -1,4 +1,5 @@
 import type { DomainMapping } from './types'
+import { loadSettings } from './settings'
 import type { BucketLike, KVLike } from './storage'
 
 /**
@@ -77,12 +78,23 @@ export class ContentSource {
     private readonly r2: BucketLike,
   ) {}
 
+  /**
+   * A site is private if it was published as private OR its operator turned on
+   * sign-in in the site settings (which can change at any time). Applied here
+   * so that every caller (middleware, page bundle, sitemap, …) agrees.
+   */
+  private async effective(mapping: DomainMapping | null): Promise<DomainMapping | null> {
+    if (!mapping || mapping.isPrivate) return mapping
+    const auth = (await loadSettings(mapping.docId).catch(() => ({}))).auth
+    return auth?.enabled ? { ...mapping, isPrivate: true } : mapping
+  }
+
   async resolveDomain(hostname: string): Promise<DomainMapping | null> {
     const index = await this.loadDomainIndex()
     const hit = index[hostname]
-    if (hit) return hit
+    if (hit) return this.effective(hit)
     try {
-      return await this.kv.get<DomainMapping>(hostname, { type: 'json', cacheTtl: 300 })
+      return await this.effective(await this.kv.get<DomainMapping>(hostname, { type: 'json', cacheTtl: 300 }))
     } catch {
       return null
     }
@@ -96,7 +108,7 @@ export class ContentSource {
   /** The only published doc, when the install hosts exactly one (single-site mode). */
   async soleDomain(): Promise<DomainMapping | null> {
     const entries = Object.values(await this.loadDomainIndex())
-    return entries.length === 1 ? entries[0] : null
+    return entries.length === 1 ? this.effective(entries[0]) : null
   }
 
   private async loadDomainIndex(): Promise<DomainIndex> {

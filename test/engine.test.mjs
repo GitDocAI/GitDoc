@@ -649,7 +649,7 @@ test('settings: quotas are per site, set at runtime by the operator, and persist
   assert.equal((await http(s.port, '/api/settings?hostname=qa.localhost')).status, 401)
   assert.equal((await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: 'many' } })).status, 400)
   assert.equal((await putSettings(s.port, 'qa.localhost', { quota: { ask_pr_day: 1 } })).status, 400)
-  assert.equal((await putSettings(s.port, 'qa.localhost', { auth: {} })).status, 400)
+  assert.equal((await putSettings(s.port, 'qa.localhost', { bogus: {} })).status, 400)
   assert.equal((await putSettings(s.port, 'nope.localhost', { quota: {} })).status, 404)
 
   // Site A gets 2 questions a day; site B keeps the instance default.
@@ -703,4 +703,254 @@ test('settings: the monthly cap, per-visitor rates, and counters survive a resta
   const again = await startServer({ env: { AI_URL: ai.url, AI_CHAT_MODEL: 'c', DATA_DIR: first.data } })
   const after = await post(again.port, 'per.localhost', '/api/ask', { question: 'docker?' })
   assert.equal(after.status, 429, JSON.stringify(after.json))
+})
+
+// ------------------------------------------------------ reader sign-in ---
+
+import { generateKeyPairSync, sign as cryptoSign, createHash } from 'node:crypto'
+import { createServer as createHttpServer } from 'node:http'
+
+const b64u = (b) => Buffer.from(b).toString('base64url')
+
+/** A signing key and a way to mint ES256 JWTs, using only node:crypto. */
+function jwtKey() {
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+  const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'k1', alg: 'ES256', use: 'sig' }
+  const mint = (claims) => {
+    const head = b64u(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: 'k1' }))
+    const body = b64u(JSON.stringify({ iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, ...claims }))
+    const sig = cryptoSign('sha256', Buffer.from(`${head}.${body}`), { key: privateKey, dsaEncoding: 'ieee-p1363' })
+    return `${head}.${body}.${b64u(sig)}`
+  }
+  return { jwks: { keys: [jwk] }, mint }
+}
+
+const cookieHeader = (res) =>
+  (res.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).filter((c) => !c.endsWith('=')).join('; ')
+const getPage = (port, host, path, cookie) =>
+  http(port, path, { host, headers: cookie ? { cookie } : {} })
+
+async function privateSite(env, name, host, auth) {
+  const s = await startServer({ env })
+  await publish(s.port, makeSite({ name, pages: DOCS }), host)
+  const r = await putSettings(s.port, host, { auth })
+  assert.equal(r.status, 200, r.text)
+  return { s, put: r }
+}
+
+test('auth: a shared password protects the site, and the API, until it is changed', async () => {
+  const { s, put } = await privateSite({}, 'Pw Site', 'pw.localhost', {
+    enabled: true,
+    providers: [{ id: 'team', type: 'password', name: 'Team', password: 'correct horse battery' }],
+  })
+  assert.doesNotMatch(put.text, /correct horse|scrypt/, 'no secret or hash comes back')
+
+  const closed = await getPage(s.port, 'pw.localhost', '/guides/deploy')
+  assert.equal(closed.status, 302)
+  assert.match(closed.headers.location, /^\/login\?return=/)
+  assert.equal((await search(s.port, 'pw.localhost', 'docker')).status, 401)
+  assert.equal((await post(s.port, 'pw.localhost', '/api/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status, 401)
+  const login = await getPage(s.port, 'pw.localhost', '/login')
+  assert.equal(login.status, 200)
+  assert.match(login.text, /id="site-password"/)
+  assert.doesNotMatch(login.text, /id="login-form"/, 'no IAM form when only a password is configured')
+
+  const wrong = await post(s.port, 'pw.localhost', '/api/auth/password', { password: 'nope nope nope' })
+  assert.equal(wrong.status, 401)
+  assert.equal(wrong.headers['set-cookie'], undefined)
+  const right = await post(s.port, 'pw.localhost', '/api/auth/password', { password: 'correct horse battery' })
+  assert.equal(right.status, 200)
+  const cookie = (right.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
+  assert.match(cookie, /^gd_site=/)
+
+  const page = await getPage(s.port, 'pw.localhost', '/guides/deploy', cookie)
+  assert.equal(page.status, 200)
+  assert.match(page.headers['cache-control'], /no-store/)
+  const withCookie = await http(s.port, '/api/search', {
+    host: 'pw.localhost', method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: '{"query":"docker"}',
+  })
+  assert.equal(withCookie.status, 200)
+
+  // A cookie is for one documentation only.
+  await publish(s.port, makeSite({ name: 'Pw Two', pages: DOCS }), 'pw2.localhost')
+  await putSettings(s.port, 'pw2.localhost', { auth: { enabled: true, providers: [{ id: 'team', type: 'password', password: 'another one 123' }] } })
+  assert.equal((await getPage(s.port, 'pw2.localhost', '/guides/deploy', cookie)).status, 302)
+
+  // Settings read back masked; sending the mask keeps the password.
+  const read = JSON.parse((await http(s.port, '/api/settings?hostname=pw.localhost', { headers: admin })).text)
+  assert.equal(read.settings.auth.providers[0].password, '***')
+  assert.doesNotMatch(JSON.stringify(read), /scrypt/)
+  const keep = await putSettings(s.port, 'pw.localhost', { auth: { enabled: true, providers: [{ id: 'team', type: 'password', password: '***' }] } })
+  assert.equal(keep.status, 200, keep.text)
+  assert.equal((await getPage(s.port, 'pw.localhost', '/guides/deploy', cookie)).status, 200, 'session survives an unrelated save')
+
+  // Changing the password ends the sessions made with the old one.
+  await putSettings(s.port, 'pw.localhost', { auth: { enabled: true, providers: [{ id: 'team', type: 'password', password: 'a brand new password' }] } })
+  assert.equal((await getPage(s.port, 'pw.localhost', '/guides/deploy', cookie)).status, 302)
+
+  // Turning sign-in off opens the site again.
+  await putSettings(s.port, 'pw.localhost', { auth: { enabled: false } })
+  assert.equal((await getPage(s.port, 'pw.localhost', '/guides/deploy')).status, 200)
+})
+
+test('auth: guessing the password is throttled', async () => {
+  const { s } = await privateSite({}, 'Pw Throttle', 'th.localhost', {
+    enabled: true,
+    providers: [{ id: 'p', type: 'password', password: 'long enough secret' }],
+  })
+  let last
+  for (let i = 0; i < 11; i++) last = await post(s.port, 'th.localhost', '/api/auth/password', { password: `guess number ${i}` })
+  assert.equal(last.status, 429)
+  // Even the right password waits.
+  assert.equal((await post(s.port, 'th.localhost', '/api/auth/password', { password: 'long enough secret' })).status, 429)
+})
+
+test('auth: settings are validated', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Val', pages: DOCS }), 'val.localhost')
+  const bad = async (auth, re) => {
+    const r = await putSettings(s.port, 'val.localhost', { auth })
+    assert.equal(r.status, 400, r.text)
+    assert.match(JSON.parse(r.text).error, re)
+  }
+  await bad({ enabled: true }, /at least one provider/)
+  await bad({ providers: [{ type: 'ldap' }] }, /provider type/)
+  await bad({ providers: [{ type: 'password', password: 'short' }] }, /8 to 200/)
+  await bad({ providers: [{ type: 'password' }] }, /needs a password/)
+  await bad({ providers: [{ type: 'oidc', issuer: 'http://idp.example.com', client_id: 'x' }] }, /https/)
+  await bad({ providers: [{ type: 'oidc', issuer: 'https://idp.example.com' }] }, /client_id/)
+  await bad({ providers: [{ id: 'a', type: 'password', password: 'long enough 1' }, { id: 'a', type: 'password', password: 'long enough 2' }] }, /duplicate/)
+  await bad({ allow: { emails: 'a@b.c' } }, /list of strings/)
+  await bad({ colour: 'blue' }, /unknown auth setting/)
+})
+
+test('auth: OpenID Connect, with allow rules, over code + PKCE', async () => {
+  const key = jwtKey()
+  const idp = { email: 'alice@acme.com', groups: [], seen: {} }
+  const srv = createHttpServer((req, res) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    req.on('end', () => {
+      const base = `http://127.0.0.1:${srv.address().port}`
+      res.setHeader('content-type', 'application/json')
+      if (req.url === '/.well-known/openid-configuration') {
+        return res.end(JSON.stringify({ issuer: base, authorization_endpoint: `${base}/authorize`, token_endpoint: `${base}/token`, jwks_uri: `${base}/jwks` }))
+      }
+      if (req.url === '/jwks') return res.end(JSON.stringify(key.jwks))
+      if (req.url === '/token') {
+        const form = new URLSearchParams(Buffer.concat(chunks).toString())
+        idp.seen = Object.fromEntries(form)
+        const verifier = createHash('sha256').update(form.get('code_verifier') ?? '').digest('base64url')
+        if (verifier !== idp.challenge || form.get('client_secret') !== 'shh' || form.get('code') !== 'the-code') {
+          return res.writeHead(400).end('{"error":"invalid_grant"}')
+        }
+        return res.end(JSON.stringify({ id_token: key.mint({ iss: base, aud: 'cid', sub: 'u-1', email: idp.email, email_verified: true, nonce: idp.nonce, groups: idp.groups }) }))
+      }
+      res.writeHead(404).end('{}')
+    })
+  })
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok))
+  cleanup.push(() => srv.close())
+  const issuer = `http://127.0.0.1:${srv.address().port}`
+
+  const { s } = await privateSite({}, 'Oidc Site', 'oidc.localhost', {
+    enabled: true,
+    providers: [
+      { id: 'okta', type: 'oidc', name: 'Okta', issuer, client_id: 'cid', client_secret: 'shh' },
+      { id: 'team', type: 'password', password: 'shared password 1' },
+    ],
+    allow: { email_domains: ['acme.com'], groups: ['docs-readers'] },
+  })
+  const login = await getPage(s.port, 'oidc.localhost', '/login?return=/guides/deploy')
+  assert.match(login.text, /Continue with Okta/)
+  assert.match(login.text, /id="site-password"/, 'several providers share the login page')
+  assert.match(login.text, /\/api\/auth\/oidc\/start\?provider=okta/)
+
+  const signIn = async () => {
+    const start = await http(s.port, '/api/auth/oidc/start?provider=okta&return=/guides/deploy', { host: 'oidc.localhost' })
+    assert.equal(start.status, 302)
+    const auth = new URL(start.headers.location)
+    assert.equal(auth.origin, issuer)
+    assert.equal(auth.searchParams.get('code_challenge_method'), 'S256')
+    assert.equal(auth.searchParams.get('redirect_uri'), 'http://oidc.localhost/api/auth/oidc/callback')
+    idp.nonce = auth.searchParams.get('nonce')
+    idp.challenge = auth.searchParams.get('code_challenge')
+    return { state: auth.searchParams.get('state'), cookie: cookieHeader(start) }
+  }
+  const finish = (tx, over = {}) =>
+    http(s.port, `/api/auth/oidc/callback?code=${over.code ?? 'the-code'}&state=${over.state ?? tx.state}`, {
+      host: 'oidc.localhost', headers: { cookie: tx.cookie },
+    })
+
+  // An allowed identity gets in and lands where it was going.
+  const ok = await finish(await signIn())
+  assert.equal(ok.status, 302)
+  assert.equal(ok.headers.location, '/guides/deploy')
+  const cookie = cookieHeader(ok)
+  assert.match(cookie, /gd_site=/)
+  assert.equal((await getPage(s.port, 'oidc.localhost', '/guides/deploy', cookie)).status, 200)
+
+  // Not on the list: signed in at the provider, still not allowed here.
+  idp.email = 'bob@other.com'
+  const denied = await finish(await signIn())
+  assert.equal(denied.headers.location, '/no-access')
+  assert.doesNotMatch(cookieHeader(denied), /gd_site=/)
+
+  // …unless a group says so.
+  idp.groups = ['docs-readers']
+  const viaGroup = await finish(await signIn())
+  assert.equal(viaGroup.headers.location, '/guides/deploy')
+
+  // A forged or replayed state is refused.
+  idp.email = 'alice@acme.com'
+  const tx = await signIn()
+  assert.match((await finish(tx, { state: 'forged' })).headers.location, /error=login_failed/)
+  assert.match((await finish({ ...tx, cookie: 'gd_oidc=tampered' })).headers.location, /error=login_failed/)
+  assert.match((await finish(tx, { code: 'wrong-code' })).headers.location, /error=login_failed/)
+
+  // The secret never comes back through the API.
+  const read = (await http(s.port, '/api/settings?hostname=oidc.localhost', { headers: admin })).text
+  assert.doesNotMatch(read, /shh/)
+})
+
+test('auth: a gitdocai provider verifies the hosted IAM’s tokens', async () => {
+  const key = jwtKey()
+  let orgId = ''
+  let docId = ''
+  const srv = createHttpServer((req, res) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    req.on('end', () => {
+      const base = `http://127.0.0.1:${srv.address().port}`
+      res.setHeader('content-type', 'application/json')
+      if (req.url === '/iam/.well-known/jwks.json') return res.end(JSON.stringify(key.jwks))
+      if (req.url === '/iam/api/v1/auth/login') {
+        const { email, password } = JSON.parse(Buffer.concat(chunks).toString())
+        if (password !== 'iam-pass') return res.writeHead(401).end('{"error":"bad credentials"}')
+        return res.end(JSON.stringify({ access_token: key.mint({ iss: base, aud: 'publish-web', sub: 'u1', email, org_id: orgId, permissions: [], doc_access: [docId] }) }))
+      }
+      res.writeHead(404).end('{}')
+    })
+  })
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok))
+  cleanup.push(() => srv.close())
+
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Iam Site', pages: DOCS }), 'iam.localhost')
+  const m = JSON.parse(readFileSync(join(s.data, '_domains/index.json'), 'utf-8'))['iam.localhost']
+  orgId = m.orgId
+  docId = m.docId
+  const r = await putSettings(s.port, 'iam.localhost', {
+    auth: { enabled: true, providers: [{ id: 'gitdocai', type: 'gitdocai', iam_url: `http://127.0.0.1:${srv.address().port}` }] },
+  })
+  assert.equal(r.status, 200, r.text)
+
+  assert.equal((await getPage(s.port, 'iam.localhost', '/guides/deploy')).status, 302)
+  assert.match((await getPage(s.port, 'iam.localhost', '/login')).text, /id="login-form"/)
+  const bad = await post(s.port, 'iam.localhost', '/api/auth/login', { email: 'a@b.co', password: 'wrong' })
+  assert.equal(bad.status, 401)
+  const good = await post(s.port, 'iam.localhost', '/api/auth/login', { email: 'a@b.co', password: 'iam-pass' })
+  assert.equal(good.status, 200)
+  const cookie = (good.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
+  assert.equal((await getPage(s.port, 'iam.localhost', '/guides/deploy', cookie)).status, 200)
 })

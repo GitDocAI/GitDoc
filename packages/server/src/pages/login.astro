@@ -52,7 +52,17 @@ const accentText = readableOn(accent)
 // Google sign-in: bounce through IAM's server-side flow. return_to points back
 // at /login so the handoff fragment lands here, where the bridge script below
 // exchanges it for a session and then forwards to the originally requested page.
-const iamUrl = env.IAM_URL
+const login = locals.siteLogin ?? { providers: [], iam: !!env.IAM_URL }
+const hasIam = login.iam
+const oidcProviders = login.providers.filter((p) => p.type === 'oidc')
+const passwordProvider = login.providers.find((p) => p.type === 'password')
+const loginErrors: Record<string, string> = {
+  access_denied: 'Sign-in was cancelled.',
+  login_failed: 'Sign-in could not be completed. Please try again.',
+  provider_unavailable: 'The sign-in provider is not reachable right now. Please try again.',
+}
+const pageError = loginErrors[url.searchParams.get('error') ?? ''] ?? ''
+const iamUrl = hasIam ? env.IAM_URL : undefined
 const loginReturn = `${url.origin}/login?return=${encodeURIComponent(returnTo)}`
 const googleStartUrl = iamUrl
   ? `${iamUrl}/iam/api/v1/auth/oauth/google/start?return_to=${encodeURIComponent(loginReturn)}`
@@ -143,6 +153,30 @@ const googleStartUrl = iamUrl
       </div>
       <div class="center"><span class="badge">Private documentation</span></div>
 
+      {pageError && <p class="error" role="alert">{pageError}</p>}
+
+      {oidcProviders.map((p) => (
+        <a class="oauth-btn" style="margin-top: 10px" href={`/api/auth/oidc/start?provider=${encodeURIComponent(p.id)}&return=${encodeURIComponent(returnTo)}`}>
+          Continue with {p.name}
+        </a>
+      ))}
+
+      {passwordProvider && (
+        <>
+          {oidcProviders.length > 0 && <div class="divider"><span>or</span></div>}
+          <form id="password-form" novalidate>
+            <label for="site-password">Password</label>
+            <input id="site-password" name="password" type="password" autocomplete="current-password" required autofocus={oidcProviders.length === 0 && !hasIam} />
+            <button type="submit" id="password-submit">Continue</button>
+            <p class="error" id="password-error" role="status" aria-live="polite"></p>
+          </form>
+        </>
+      )}
+
+      {hasIam && (oidcProviders.length > 0 || passwordProvider) && <div class="divider"><span>or</span></div>}
+
+      {hasIam && (
+        <div id="iam-block">
       {googleStartUrl && (
         <>
           <a class="oauth-btn" href={googleStartUrl}>
@@ -168,10 +202,47 @@ const googleStartUrl = iamUrl
         <button type="submit" id="submit">Sign in</button>
         <p class="error" id="error" role="status" aria-live="polite"></p>
       </form>
+        </div>
+      )}
     </main>
 
     <script is:inline define:vars={{ returnTo }}>
+      const pwForm = document.getElementById('password-form')
+      if (pwForm) {
+        pwForm.addEventListener('submit', async (e) => {
+          e.preventDefault()
+          const err = document.getElementById('password-error')
+          const btn = document.getElementById('password-submit')
+          const password = document.getElementById('site-password').value
+          err.textContent = ''
+          if (!password) {
+            err.textContent = 'Password is required.'
+            return
+          }
+          btn.disabled = true
+          try {
+            const res = await fetch('/api/auth/password', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ password }),
+            })
+            if (res.ok) {
+              window.location.assign(returnTo)
+              return
+            }
+            err.textContent =
+              res.status === 429 ? 'Too many attempts. Please wait a moment.' : 'Incorrect password.'
+          } catch {
+            err.textContent = 'Network error. Please try again.'
+          }
+          btn.disabled = false
+        })
+      }
+    </script>
+    <script is:inline define:vars={{ returnTo }}>
+      ;(function () {
       const form = document.getElementById('login-form')
+      if (!form) return // this site signs in with a password or SSO only
       const errorEl = document.getElementById('error')
       const submitEl = document.getElementById('submit')
       const emailEl = document.getElementById('email')
@@ -295,6 +366,7 @@ const googleStartUrl = iamUrl
         submitEl.disabled = false
         submitEl.textContent = 'Sign in'
       })
+      })()
     </script>
   </body>
 </html>
