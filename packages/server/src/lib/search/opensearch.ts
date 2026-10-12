@@ -215,6 +215,17 @@ export class OpenSearchBackend implements SearchBackend {
     return { backend: this.name, indexed: docs.length, semantic: !!dim, warning }
   }
 
+  async has(site: SiteRef): Promise<boolean> {
+    const r = await this.request('GET', `${OpenSearchBackend.indexName(site)}/_count`)
+    if (r.status === 404) return false
+    if (r.status >= 300) throw new Error(`OpenSearch count → ${r.status}`)
+    try {
+      return (JSON.parse(r.body).count ?? 0) > 0
+    } catch {
+      return false
+    }
+  }
+
   async remove(site: SiteRef): Promise<void> {
     await this.json('DELETE', OpenSearchBackend.indexName(site), undefined, [404])
   }

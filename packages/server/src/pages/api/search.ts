@@ -4,6 +4,7 @@ import { emitEvent } from '../../lib/events'
 import { clientKey, hit, tooMany } from '../../lib/rateLimit'
 import { effectiveQuota } from '../../lib/settings'
 import { searchBackend } from '../../lib/search'
+import { ensureIndexed } from '../../lib/search/reindex'
 
 export const prerender = false
 
@@ -36,6 +37,8 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   if (!query) return json({ error: 'query is required' }, 400)
 
   try {
+    // Never indexed (published by an older build)? Ingest it now, once.
+    await ensureIndexed({ orgId: mapping.orgId, docId: mapping.docId })
     const results = await searchBackend().search(
       { orgId: mapping.orgId, docId: mapping.docId },
       {

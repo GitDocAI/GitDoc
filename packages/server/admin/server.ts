@@ -20,7 +20,7 @@ import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { hit } from '../src/lib/rateLimit'
 import { searchBackend } from '../src/lib/search'
-import { reindexSite } from '../src/lib/search/reindex'
+import { ensureAllIndexed, reindexSite } from '../src/lib/search/reindex'
 import {
   effectiveQuota,
   hashPassword,
@@ -343,4 +343,9 @@ const server = createServer((req, res) => {
 })
 const port = Number(env.ADMIN_PORT || 8081)
 const host = env.ADMIN_HOST || '127.0.0.1'
-server.listen(port, host, () => console.log(`gitdoc admin on http://${host}:${port}`))
+server.listen(port, host, () => {
+  console.log(`gitdoc admin on http://${host}:${port}`)
+  // Whatever was published without an index (older build, files written
+  // directly) is ingested now, in the background, instead of on first search.
+  void ensureAllIndexed(env)
+})

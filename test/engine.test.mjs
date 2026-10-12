@@ -639,13 +639,13 @@ test('reindex: rebuilds search from files already on disk (shared volume setups)
   const s = await startServer()
   await publish(s.port, makeSite({ name: 'Volume', pages: DOCS }), 'vol.localhost')
   rmSync(join(s.data, '_search'), { recursive: true, force: true }) // as if another process wrote the site
-  assert.deepEqual((await search(s.port, 'vol.localhost', 'docker')).results, [])
 
   const auth = { authorization: `Bearer ${TOKEN}` }
   assert.equal((await http(adminOf(s.port), '/api/reindex', { method: 'POST' })).status, 401)
   const r = await http(adminOf(s.port), '/api/reindex?hostname=vol.localhost', { method: 'POST', headers: auth })
   assert.equal(r.status, 200, r.text)
   assert.equal(JSON.parse(r.text).sites['vol.localhost'].indexed, 3)
+  assert.ok(existsSync(join(s.data, '_search')), 'the index was rebuilt on demand')
   assert.equal((await search(s.port, 'vol.localhost', 'docker')).results[0].path, '/guides/deploy')
 
   const unknown = await http(adminOf(s.port), '/api/reindex?hostname=nope.localhost', { method: 'POST', headers: auth })
@@ -1173,11 +1173,16 @@ test('a signed-in reader of a private site can sign out; public sites show no si
 
   const page = await getPage(s.port, 'out.localhost', '/guides/deploy', cookie)
   assert.equal(page.status, 200)
-  assert.match(page.text, /data-sign-out/, 'a sign-out control is on the page')
-  assert.match(page.text, /href="\/api\/auth\/logout"/)
+  assert.match(page.text, /<form[^>]*method="post"[^>]*action="\/api\/auth\/logout"/, 'sign-out is a POST form')
+  assert.doesNotMatch(page.text, /<a[^>]*href="\/api\/auth\/logout"/, 'and not a link the site would prefetch')
 
-  // It works: the cookie is cleared and the site asks to sign in again.
-  const out = await http(s.port, '/api/auth/logout', { host: 'out.localhost', headers: { cookie } })
+  // A GET (what prefetching does) must not end the session.
+  const prefetch = await http(s.port, '/api/auth/logout', { host: 'out.localhost', headers: { cookie } })
+  assert.equal(prefetch.status, 405)
+  assert.equal((await getPage(s.port, 'out.localhost', '/guides/deploy', cookie)).status, 200, 'still signed in')
+
+  // POST signs out: the cookie is cleared and the site asks to sign in again.
+  const out = await http(s.port, '/api/auth/logout', { host: 'out.localhost', method: 'POST', headers: { cookie } })
   assert.equal(out.status, 303)
   assert.match(String(out.headers['set-cookie']), /gd_site=deleted; Path=\/; Expires=Thu, 01 Jan 1970/)
   assert.equal((await getPage(s.port, 'out.localhost', '/guides/deploy')).status, 302)
@@ -1185,4 +1190,39 @@ test('a signed-in reader of a private site can sign out; public sites show no si
   // A public site has no session, so nothing to sign out of.
   await publish(s.port, makeSite({ name: 'Open Site', pages: DOCS }), 'open.localhost')
   assert.doesNotMatch((await getPage(s.port, 'open.localhost', '/guides/deploy')).text, /data-sign-out/)
+})
+
+// ------------------------------------------------ ingestion self-heal ---
+
+test('ingestion: a site published without an index is ingested on its own', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Legacy', pages: DOCS }), 'legacy.localhost')
+  const m = JSON.parse(readFileSync(join(s.data, '_domains/index.json'), 'utf-8'))['legacy.localhost']
+
+  // What an older build left behind: rendered pages, but no search corpus or index.
+  rmSync(join(s.data, 'docs', m.docId, 'search-docs.json'))
+  rmSync(join(s.data, '_search'), { recursive: true, force: true })
+  assert.ok(!existsSync(join(s.data, '_search')))
+
+  // The first search ingests it (from the stored pages) and answers.
+  const r = await search(s.port, 'legacy.localhost', 'docker')
+  assert.equal(r.status, 200)
+  assert.equal(r.results[0]?.path, '/guides/deploy', JSON.stringify(r))
+  assert.ok(existsSync(join(s.data, '_search', `${m.docId}.json`)), 'the index was written')
+  assert.equal((await search(s.port, 'legacy.localhost', 'npm')).results[0].path, '/guides/install')
+})
+
+test('ingestion: a server that restarts over unindexed data ingests it at startup', async () => {
+  const first = await startServer()
+  await publish(first.port, makeSite({ name: 'Boot', pages: DOCS }), 'boot.localhost')
+  const m = JSON.parse(readFileSync(join(first.data, '_domains/index.json'), 'utf-8'))['boot.localhost']
+  rmSync(join(first.data, 'docs', m.docId, 'search-docs.json'))
+  rmSync(join(first.data, '_search'), { recursive: true, force: true })
+  first.stop()
+
+  const again = await startServer({ env: { DATA_DIR: first.data } })
+  const index = join(first.data, '_search', `${m.docId}.json`)
+  for (let i = 0; i < 50 && !existsSync(index); i++) await new Promise((r) => setTimeout(r, 100))
+  assert.ok(existsSync(index), 'indexed without any search or publish')
+  assert.equal((await search(again.port, 'boot.localhost', 'docker')).results[0].path, '/guides/deploy')
 })

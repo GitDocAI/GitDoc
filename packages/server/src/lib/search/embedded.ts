@@ -189,6 +189,14 @@ export class EmbeddedSearch implements SearchBackend {
     await rm(this.file(site, 'vec'), { force: true })
   }
 
+  async has(site: SiteRef): Promise<boolean> {
+    try {
+      return (await stat(this.file(site, 'json'))).size > 2
+    } catch {
+      return false
+    }
+  }
+
   private async load(site: SiteRef): Promise<Loaded | null> {
     const json = this.file(site, 'json')
     let st

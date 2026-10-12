@@ -4,6 +4,7 @@ import { ContentSource } from '../../lib/contentSource'
 import { clientKey, hit, tooMany } from '../../lib/rateLimit'
 import { effectiveQuota } from '../../lib/settings'
 import { searchBackend, type SearchDoc } from '../../lib/search'
+import { corpusFor, ensureIndexed } from '../../lib/search/reindex'
 
 export const prerender = false
 
@@ -102,7 +103,8 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   const site = { orgId: mapping.orgId, docId: mapping.docId }
   const env = locals.runtime.env
   const source = new ContentSource(env.DOMAINS_KV, env.DOCS_R2)
-  const pages = () => source.readJson<SearchDoc[]>(`docs/${mapping.docId}/search-docs.json`).then((p) => p ?? [])
+  const pages = async (): Promise<SearchDoc[]> =>
+    (await source.readJson<SearchDoc[]>(`docs/${mapping.docId}/search-docs.json`)) ?? corpusFor(mapping.docId)
 
   try {
     switch (params?.name) {
@@ -110,6 +112,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
         const query = typeof args.query === 'string' ? args.query.trim().slice(0, 300) : ''
         if (!query) return ok(id, text('query is required', true))
         const limit = Math.min(Math.max(Number(args.limit) || 8, 1), 20)
+        await ensureIndexed(site)
         const res = await searchBackend().search(site, { query, limit })
         if (!res.length) return ok(id, text('No pages matched.'))
         return ok(

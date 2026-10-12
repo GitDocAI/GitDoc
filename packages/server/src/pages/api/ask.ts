@@ -7,6 +7,7 @@ import { clientKey, envInt, hit, tooMany } from '../../lib/rateLimit'
 import { effectiveQuota } from '../../lib/settings'
 import { takeAsk } from '../../lib/usage'
 import { searchBackend, type Passage } from '../../lib/search'
+import { ensureIndexed } from '../../lib/search/reindex'
 
 export const prerender = false
 
@@ -125,6 +126,7 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
       }
     }
 
+    await ensureIndexed(site)
     const found = await searchBackend().passages(site, { query, versionId, limit: 6 })
     if (!found.length) {
       emitEvent({ type: 'question', org_id: mapping.orgId, doc_id: mapping.docId, query_text: question, was_answered: false })

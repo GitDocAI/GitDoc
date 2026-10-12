@@ -73,6 +73,8 @@ export interface SearchBackend {
   replace(site: SiteRef, docs: SearchDoc[]): Promise<IndexReport>
   /** Drop everything indexed for `site`. */
   remove(site: SiteRef): Promise<void>
+  /** Does `site` have a (non-empty) index? Used to ingest lazily what was never indexed. */
+  has(site: SiteRef): Promise<boolean>
   search(site: SiteRef, q: SearchQuery): Promise<SearchResult[]>
   /** The passages most relevant to `q`, with their text. Used by Ask. */
   passages(site: SiteRef, q: SearchQuery): Promise<Passage[]>
