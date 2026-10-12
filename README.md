@@ -117,6 +117,12 @@ Add another engine by implementing `SearchBackend` (`packages/server/src/lib/sea
 
 With a hosted model, the passages used to answer a question leave your server. For private documentation, use a model you host.
 
+## Behind a CDN
+
+The server sends `Cache-Control: public, max-age=60, stale-while-revalidate=600` for public pages and `private, no-store` for private ones, so a CDN in front (Cloudflare, for instance, with a cache rule that respects origin headers) serves most traffic. Set `TRUST_PROXY=true` so rate limits count real visitors and the country in analytics comes from `CF-IPCountry`. Do not set it when the server is reachable without the proxy: those headers can then be forged.
+
+`POST /api/reindex[?hostname=…]` (Bearer `PUBLISH_TOKEN`) rebuilds the search index from the files already on disk and drops the caches. It is for setups where another process writes the site into the data volume instead of calling `/api/publish`.
+
 ## Known limitations
 
 - **Private sites need an identity provider** you run yourself (see `DOCS_PRIVATE`).

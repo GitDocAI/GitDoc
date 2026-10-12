@@ -582,3 +582,48 @@ test('the assistant panel is shown only when the manifest turns it on', async ()
   assert.doesNotMatch((await http(s.port, '/guides/deploy', { host: 'offp.localhost' })).text, /data-assistant-panel/)
   assert.match((await http(s.port, '/guides/deploy', { host: 'onp.localhost' })).text, /data-assistant-panel/)
 })
+
+// ------------------------------------------- files written by someone else ---
+
+test('reindex: rebuilds search from files already on disk (shared volume setups)', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Volume', pages: DOCS }), 'vol.localhost')
+  rmSync(join(s.data, '_search'), { recursive: true, force: true }) // as if another process wrote the site
+  assert.deepEqual((await search(s.port, 'vol.localhost', 'docker')).results, [])
+
+  const auth = { authorization: `Bearer ${TOKEN}` }
+  assert.equal((await http(s.port, '/api/reindex', { method: 'POST' })).status, 401)
+  const r = await http(s.port, '/api/reindex?hostname=vol.localhost', { method: 'POST', headers: auth })
+  assert.equal(r.status, 200, r.text)
+  assert.equal(JSON.parse(r.text).sites['vol.localhost'].indexed, 3)
+  assert.equal((await search(s.port, 'vol.localhost', 'docker')).results[0].path, '/guides/deploy')
+
+  const unknown = await http(s.port, '/api/reindex?hostname=nope.localhost', { method: 'POST', headers: auth })
+  assert.equal(unknown.status, 500)
+  // With no hostname it reindexes every site.
+  const all = JSON.parse((await http(s.port, '/api/reindex', { method: 'POST', headers: auth })).text)
+  assert.deepEqual(Object.keys(all.sites), ['vol.localhost'])
+})
+
+test('geo: the visitor country comes from the edge header, only behind a trusted proxy', async () => {
+  const readEvents = async (data) => {
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 100))
+      try {
+        const f = readdirSync(join(data, '_events'))[0]
+        const rows = readFileSync(join(data, '_events', f), 'utf-8').trim().split('\n').map((l) => JSON.parse(l))
+        if (rows.some((x) => x.type === 'page_view')) return rows
+      } catch {
+        /* not yet */
+      }
+    }
+    return []
+  }
+  for (const [trust, expected] of [['true', 'ES'], ['', undefined]]) {
+    const s = await startServer({ env: { EVENTS: 'file', TRUST_PROXY: trust } })
+    await publish(s.port, makeSite({ name: `Geo ${trust || 'off'}`, pages: DOCS }), 'geo.localhost')
+    await http(s.port, '/guides/deploy', { host: 'geo.localhost', headers: { 'cf-ipcountry': 'ES', 'cf-region': 'Madrid' } })
+    const view = (await readEvents(s.data)).find((x) => x.type === 'page_view')
+    assert.equal(view.country, expected)
+  }
+})

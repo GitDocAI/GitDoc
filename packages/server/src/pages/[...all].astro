@@ -21,6 +21,7 @@ import { resolvePreset } from '../lib/presets'
 import { ContentSource } from '../lib/contentSource'
 import { loadSsrBundle } from '../lib/serverData'
 import { reportPageView } from '../lib/pageViewEvent'
+import { visitorGeo } from '../lib/geo'
 import { buildJsonLd } from '../lib/jsonLd'
 import {
   extractHeadings,
@@ -76,8 +77,7 @@ if (isMarkdown) {
       path: requestUrl.pathname,
       pageTitle: entry.title,
       userAgent: Astro.request.headers.get('user-agent'),
-      country: Astro.locals.runtime.cf?.country,
-      region: Astro.locals.runtime.cf?.region,
+      ...visitorGeo(Astro.request),
     }),
   )
 
@@ -406,8 +406,7 @@ Astro.locals.runtime.ctx.waitUntil(
     path: requestUrl.pathname,
     pageTitle,
     userAgent: Astro.request.headers.get('user-agent'),
-    country: Astro.locals.runtime.cf?.country,
-    region: Astro.locals.runtime.cf?.region,
+    ...visitorGeo(Astro.request),
   }),
 )
 
