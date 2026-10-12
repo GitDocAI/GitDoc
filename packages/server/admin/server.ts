@@ -34,6 +34,18 @@ import { sign, unsign } from '../src/lib/siteAuth'
 import { readUsage } from '../src/lib/usage'
 // @ts-expect-error bundled as text by the build (see scripts/assemble-engine.mjs)
 import page from './ui.html'
+// @ts-expect-error bundled as text by the build
+import logoOnDark from './assets/logo-on-dark.svg'
+// @ts-expect-error bundled as text by the build
+import logoOnLight from './assets/logo-on-light.svg'
+// @ts-expect-error bundled as text by the build
+import mark from './assets/mark.svg'
+
+const IMAGES: Record<string, string> = {
+  '/logo-on-dark.svg': logoOnDark,
+  '/logo-on-light.svg': logoOnLight,
+  '/mark.svg': mark,
+}
 
 const env = process.env
 const dataDir = () => resolve(env.DATA_DIR || './data')
@@ -201,7 +213,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const method = req.method ?? 'GET'
 
   if (method === 'GET' && (path === '/' || path === '/index.html')) {
-    return send(res, 200, page, { 'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'" })
+    return send(res, 200, page, { 'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'" })
+  }
+
+  if (method === 'GET' && IMAGES[path]) {
+    res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff' })
+    return void res.end(IMAGES[path])
   }
 
   // --- session --------------------------------------------------------------

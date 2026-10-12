@@ -35,7 +35,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node20',
-  loader: { '.html': 'text' },
+  loader: { '.html': 'text', '.svg': 'text' },
   // Bundled CJS dependencies (jose) need require() in an ES module.
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
   logLevel: 'warning',

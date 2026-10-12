@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>GitDoc admin</title>
+<link rel="icon" type="image/svg+xml" href="/mark.svg" />
 <script>
   // Before first paint, so there is no flash: stored choice, else the system's.
   try {
@@ -46,9 +47,11 @@
   #shell { display: flex; height: 100vh; overflow: hidden; }
   aside { width: 224px; flex: none; display: flex; flex-direction: column; background: var(--sidebar); border-right: 1px solid var(--sidebar-border); }
   .brand { height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--sidebar-border); }
-  .mark { width: 28px; height: 28px; border-radius: 8px; background: var(--primary); color: var(--primary-foreground); display: grid; place-items: center; }
-  .brand b { font-size: 14px; font-weight: 650; display: block; line-height: 1.1; }
-  .brand small { color: var(--muted-foreground); font-size: 11px; }
+  .logo { height: 24px; width: auto; display: block; }
+  .brand .badge { margin-left: auto; font-size: 11px; padding: 1px 8px; }
+  .logo.on-light { display: none; }
+  :root.light .logo.on-dark { display: none; }
+  :root.light .logo.on-light { display: block; }
   aside nav { flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
   .nav { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; font-size: 14px;
     color: color-mix(in oklch, var(--foreground) 70%, transparent); transition: all .15s; }
@@ -68,7 +71,7 @@
   @media (max-width: 760px) {
     #shell { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
     aside { width: auto; flex-direction: row; align-items: center; border-right: 0; border-bottom: 1px solid var(--sidebar-border); }
-    .brand { border: 0; } .brand small { display: none; }
+    .brand { border: 0; } .brand .badge { display: none; }
     aside nav { flex-direction: row; } .foot { border: 0; flex-direction: row; }
     .nav span:last-child, .foot span:last-child { display: none; }
     .topbar { display: none; }
@@ -145,7 +148,7 @@
   /* sign-in / onboarding */
   #auth { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--background); }
   .auth-card { width: 100%; max-width: 400px; }
-  .auth-card .mark { width: 44px; height: 44px; border-radius: 12px; margin: 0 auto 16px; }
+  .auth-card .logo { height: 40px; margin: 0 auto 20px; }
   .auth-card h2, .auth-card .sub { text-align: center; }
   .toast { position: fixed; right: 20px; bottom: 20px; z-index: 10; padding: 10px 14px; border-radius: var(--radius); font-size: 13px;
     background: var(--card); border: 1px solid var(--border); box-shadow: 0 8px 30px rgba(0,0,0,.25); }
@@ -156,8 +159,9 @@
 <div id="shell" hidden>
   <aside>
     <div class="brand">
-      <div class="mark" data-i="book"></div>
-      <div><b>GitDoc</b><small>Admin</small></div>
+      <img class="logo on-dark" src="/logo-on-dark.svg" alt="GitDoc" />
+      <img class="logo on-light" src="/logo-on-light.svg" alt="GitDoc" />
+      <span class="badge pri">Admin</span>
     </div>
     <nav>
       <a class="nav" href="#/sites" data-nav="sites"><span data-i="layout"></span><span>Sites</span></a>
@@ -258,8 +262,10 @@ setTheme(document.documentElement.className === 'light' ? 'light' : 'dark')
 
 // ---- auth views ----
 function authShell(title, sub, ...body) {
-  const m = h('div', { class: 'mark' }); m.append(icon('book'))
-  return h('div', { class: 'auth-card' }, m, h('h2', {}, title), h('p', { class: 'sub' }, sub), ...body)
+  return h('div', { class: 'auth-card' },
+    h('img', { class: 'logo on-dark', src: '/logo-on-dark.svg', alt: 'GitDoc' }),
+    h('img', { class: 'logo on-light', src: '/logo-on-light.svg', alt: 'GitDoc' }),
+    h('h2', {}, title), h('p', { class: 'sub' }, sub), ...body)
 }
 function viewSetup() {
   const err = h('div'); let busy = false
