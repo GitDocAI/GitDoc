@@ -4,13 +4,16 @@ name: Release
 # tests, then publishes the engine to npm (@gitdocai/engine) and the self-host
 # image to GitHub Container Registry. The version is the release tag
 # (v0.1.0 → 0.1.0). If anything fails, nothing is published.
+#
+# Jobs run on the organisation's own runner (`gitdocai-dev`), like the rest of
+# GitDocAI's workflows: we do not use GitHub-hosted runners.
 on:
   release:
     types: [published]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: gitdocai-dev
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +34,7 @@ jobs:
 
   test:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: gitdocai-dev
     strategy:
       fail-fast: true
       matrix:
@@ -40,7 +43,7 @@ jobs:
     services:
       opensearch:
         image: opensearchproject/opensearch:2.19.1
-        ports: ['9200:9200']
+        ports: ['9200']
         env:
           discovery.type: single-node
           DISABLE_SECURITY_PLUGIN: 'true'
@@ -64,11 +67,12 @@ jobs:
       # The built engine runs on Node 20 and 22; the tests need no install.
       - run: npm test
         env:
-          GITDOC_TEST_OPENSEARCH_URL: http://localhost:9200
+          # the service's host port is assigned per job (the runner is shared)
+          GITDOC_TEST_OPENSEARCH_URL: http://localhost:${{ job.services.opensearch.ports['9200'] }}
 
   npm:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: gitdocai-dev
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -105,7 +109,7 @@ jobs:
 
   image:
     needs: npm
-    runs-on: ubuntu-latest
+    runs-on: gitdocai-dev
     permissions:
       contents: read
       packages: write
