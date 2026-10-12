@@ -1160,3 +1160,29 @@ test('events: the gitdocai sink reports to the control plane with a service toke
   assert.equal(pv.path, '/guides/deploy')
   assert.equal(JSON.stringify(sEv).includes('result_count'), false, 'only fields of the control plane contract')
 })
+
+// ---------------------------------------------------------- sign out ---
+
+test('a signed-in reader of a private site can sign out; public sites show no sign-out', async () => {
+  const { s } = await privateSite({}, 'Out Site', 'out.localhost', {
+    enabled: true,
+    providers: [{ id: 'team', type: 'password', password: 'sign out secret 1' }],
+  })
+  const login = await post(s.port, 'out.localhost', '/api/auth/password', { password: 'sign out secret 1' })
+  const cookie = (login.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
+
+  const page = await getPage(s.port, 'out.localhost', '/guides/deploy', cookie)
+  assert.equal(page.status, 200)
+  assert.match(page.text, /data-sign-out/, 'a sign-out control is on the page')
+  assert.match(page.text, /href="\/api\/auth\/logout"/)
+
+  // It works: the cookie is cleared and the site asks to sign in again.
+  const out = await http(s.port, '/api/auth/logout', { host: 'out.localhost', headers: { cookie } })
+  assert.equal(out.status, 303)
+  assert.match(String(out.headers['set-cookie']), /gd_site=deleted; Path=\/; Expires=Thu, 01 Jan 1970/)
+  assert.equal((await getPage(s.port, 'out.localhost', '/guides/deploy')).status, 302)
+
+  // A public site has no session, so nothing to sign out of.
+  await publish(s.port, makeSite({ name: 'Open Site', pages: DOCS }), 'open.localhost')
+  assert.doesNotMatch((await getPage(s.port, 'open.localhost', '/guides/deploy')).text, /data-sign-out/)
+})

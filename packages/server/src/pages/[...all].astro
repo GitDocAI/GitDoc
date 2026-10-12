@@ -132,6 +132,9 @@ const documentation = bundle.documentation
 // server has a chat model: otherwise the panel, the floating button and the
 // "Ask" row in search would all lead to an error.
 const assistantOn = documentation.config?.assistant?.enabled === true && chatConfigured()
+// A reader of a private documentation can sign out (a public one has no session).
+const signedIn = bundle.mapping.isPrivate && !!Astro.locals.session
+const userLabel = Astro.locals.session?.email ?? Astro.locals.session?.name ?? undefined
 const sections = bundle.sections
 const activeSection = bundle.activeSection
 const activeVersionRaw = bundle.activeVersion
@@ -641,6 +644,8 @@ const jsonLd = buildJsonLd({
       hasBothModes={hasBothModes}
       preset={preset}
       assistantEnabled={assistantOn}
+      signedIn={signedIn}
+      userLabel={userLabel}
       breadcrumb={breadcrumb}
       versionSelectorEnabled={versionSelectorEnabled === true}
       versionSelectorPosition={versionSelectorPosition ?? 'navbar_right'}
@@ -674,6 +679,10 @@ const jsonLd = buildJsonLd({
               arrangement={preset.arrangement}
               searchInSidebar={preset.header.searchInSidebar}
               assistantEnabled={assistantOn}
+              signedIn={signedIn}
+              userLabel={userLabel}
+      signedIn={signedIn}
+      userLabel={userLabel}
               docName={docName}
               logoDarkUrl={logoDarkUrl}
               logoLightUrl={logoLightUrl}
@@ -718,6 +727,10 @@ const jsonLd = buildJsonLd({
               arrangement={preset.arrangement}
               searchInSidebar={preset.header.searchInSidebar}
               assistantEnabled={assistantOn}
+              signedIn={signedIn}
+              userLabel={userLabel}
+      signedIn={signedIn}
+      userLabel={userLabel}
               docName={docName}
               logoDarkUrl={logoDarkUrl}
               logoLightUrl={logoLightUrl}

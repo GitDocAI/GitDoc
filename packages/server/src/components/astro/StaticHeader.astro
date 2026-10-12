@@ -10,6 +10,7 @@
 import type { Preset } from '../../lib/presets'
 import { iconHtml } from '../../lib/iconLibrary'
 import RightClusterItems from './RightClusterItems.astro'
+import SignOut from './SignOut.astro'
 import VersionSelector from './VersionSelector.astro'
 
 interface NavItem {
@@ -56,6 +57,10 @@ interface Props {
   preset: Preset
   /** When true, an "Ask AI" pill renders next to the search button. */
   assistantEnabled?: boolean
+  /** The reader has a session on a private documentation: offer sign-out. */
+  signedIn?: boolean
+  /** Who is signed in (tooltip). */
+  userLabel?: string
   /** Title chain to the current page (parent groups + page title).
    *  Rendered on mobile in the subbar as "Group › Page". */
   breadcrumb?: string[]
@@ -83,6 +88,8 @@ const {
   hasBothModes = true,
   preset,
   assistantEnabled = false,
+  signedIn = false,
+  userLabel,
   breadcrumb = [],
   versionSelectorEnabled = false,
   versionSelectorPosition = 'navbar_right',
@@ -437,6 +444,7 @@ function sectionIconHtml(name: string | undefined, title?: string): string {
         </button>
       ) : null
     ))}
+    {signedIn && <SignOut who={userLabel} />}
   </div>
 
   {/* Mobile right cluster — icon-only search + Ask AI sit directly
@@ -498,6 +506,7 @@ function sectionIconHtml(name: string | undefined, title?: string): string {
           assistantEnabled={assistantEnabled}
           variant="stacked"
         />
+        {signedIn && <SignOut variant="row" who={userLabel} />}
       </div>
     </div>
   </div>

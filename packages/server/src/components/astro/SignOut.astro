@@ -1,0 +1,35 @@
+---
+/**
+ * Sign-out control for private documentation. Rendered only when the reader
+ * has a session; `/api/auth/logout` clears every session cookie and returns
+ * to the home page (which then asks for sign-in again).
+ */
+interface Props {
+  /** icon: a round icon button (navbar); row: a labelled row (menus, sidebar). */
+  variant?: 'icon' | 'row'
+  /** Who is signed in, shown as a tooltip. */
+  who?: string
+}
+const { variant = 'icon', who } = Astro.props
+const title = who ? `Sign out (${who})` : 'Sign out'
+---
+
+<a
+  href="/api/auth/logout"
+  data-sign-out
+  aria-label="Sign out"
+  title={title}
+  class:list={[
+    'rounded-lg text-foreground/70 hover:text-foreground hover:bg-muted transition-colors no-underline',
+    variant === 'row'
+      ? 'flex items-center gap-2 w-full px-3 py-2 text-sm'
+      : 'grid place-items-center w-8 h-8 p-1',
+  ]}
+>
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <path d="m16 17 5-5-5-5" />
+    <path d="M21 12H9" />
+  </svg>
+  {variant === 'row' && <span>Sign out</span>}
+</a>

@@ -7,6 +7,7 @@
  * and expand/collapse work without JS.
  */
 import SidebarNode from './SidebarNode.astro'
+import SignOut from './SignOut.astro'
 import type { PresetArrangement } from '../../lib/presets'
 
 interface Page {
@@ -31,6 +32,9 @@ interface Props {
    *  when `searchInSidebar` is true — controls whether the Ask AI pill
    *  appears next to the search button at the top of the sidebar. */
   assistantEnabled?: boolean
+  /** The reader has a session on a private documentation: offer sign-out. */
+  signedIn?: boolean
+  userLabel?: string
   /** Mobile drawer chrome — these only render inside the drawer
    *  (`lg:hidden`); on desktop the sidebar is just the page tree. */
   docName?: string
@@ -66,6 +70,8 @@ const {
   arrangement,
   searchInSidebar = false,
   assistantEnabled = false,
+  signedIn = false,
+  userLabel,
   docName = '',
   logoDarkUrl,
   logoLightUrl,
@@ -185,6 +191,7 @@ const openGroups = collectOpenGroups(pages, activePageId)
           </svg>
         </button>
       )}
+      {signedIn && <SignOut who={userLabel} />}
     </div>
     {showVersionSelector && (
       <details class="sidebar-select">
