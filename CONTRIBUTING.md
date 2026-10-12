@@ -29,9 +29,11 @@ enables the tests that run against a real OpenSearch.
 
 ## Releasing
 
-Publish a GitHub Release (tag `v<version>`). One workflow does the rest: it
-builds and tests, publishes `@gitdocai/engine` to npm, and pushes
-`ghcr.io/gitdocai/gitdoc-server` with the same version. It needs the
+Publish a GitHub Release (tag `v<version>`). The release workflow is the only
+pipeline: it builds, tests (Node 20 and 22, against a real OpenSearch),
+publishes `@gitdocai/engine` to npm, and pushes
+`ghcr.io/gitdocai/gitdoc-server` with the same version. Nothing runs on pull
+requests, so run `npm test` before you open one. It needs the
 `NPM_TOKEN` repository secret. A release marked as pre-release goes to the
 `next` dist-tag instead of `latest`.
 

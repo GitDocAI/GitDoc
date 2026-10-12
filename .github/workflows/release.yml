@@ -1,14 +1,15 @@
 name: Release
 
-# One pipeline per release: publishes the engine to npm (@gitdocai/engine) and
-# the self-host image to GitHub Container Registry. It runs when a GitHub
-# Release is published; the version is the release tag (v0.1.0 → 0.1.0).
+# The only pipeline. It runs when a GitHub Release is published: it builds and
+# tests, then publishes the engine to npm (@gitdocai/engine) and the self-host
+# image to GitHub Container Registry. The version is the release tag
+# (v0.1.0 → 0.1.0). If anything fails, nothing is published.
 on:
   release:
     types: [published]
 
 jobs:
-  npm:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +21,65 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run typecheck
       - run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine
+          path: engine/
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        node: [20, 22]
+    # A real OpenSearch for the adapter tests (they skip without the URL).
+    services:
+      opensearch:
+        image: opensearchproject/opensearch:2.19.1
+        ports: ['9200:9200']
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: 'true'
+          DISABLE_INSTALL_DEMO_CONFIG: 'true'
+          OPENSEARCH_JAVA_OPTS: '-Xms512m -Xmx512m'
+        options: >-
+          --health-cmd "curl -fs http://localhost:9200/_cluster/health"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine
+          path: engine/
+
+      # The built engine runs on Node 20 and 22; the tests need no install.
       - run: npm test
+        env:
+          GITDOC_TEST_OPENSEARCH_URL: http://localhost:9200
+
+  npm:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Publish exactly what was tested.
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine
+          path: engine/
 
       # Same mechanism as the CLI's old release action: the version comes from
       # the tag, and an .npmrc next to the package reads the token from NPM_TOKEN.
