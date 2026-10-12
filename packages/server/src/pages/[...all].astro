@@ -20,6 +20,7 @@ import SearchPalette from '../components/astro/SearchPalette.astro'
 import { resolvePreset } from '../lib/presets'
 import { ContentSource } from '../lib/contentSource'
 import { loadSsrBundle } from '../lib/serverData'
+import { errorPage } from '../lib/errorPage'
 import { reportPageView } from '../lib/pageViewEvent'
 import { visitorGeo } from '../lib/geo'
 import { buildJsonLd } from '../lib/jsonLd'
@@ -54,6 +55,16 @@ const loaded = await loadSsrBundle(
 // mapping or the doc is missing in R2 — pass it straight through.
 if (loaded instanceof Response) return loaded
 const bundle = loaded
+
+// A URL that names no section or page is a 404, not the home page: crawlers
+// would index endless duplicates and readers would not notice a broken link.
+if (bundle.notFound) {
+  return errorPage({
+    status: 404,
+    title: 'Page not found',
+    message: 'This page does not exist. It may have been moved or removed.',
+  })
+}
 
 if (isMarkdown) {
   const entry = bundle.currentEntry

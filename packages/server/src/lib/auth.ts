@@ -136,14 +136,15 @@ export async function refreshSession(
   return claims
 }
 
-// s2s token for calling content-runtime, minted via IAM's client_credentials
-// grant and cached in-isolate until ~30s before expiry so search/ask don't hit
-// IAM on every request.
-let s2sCache: { token: string; exp: number } | null = null
+// Service-to-service tokens, minted via IAM's client_credentials grant and
+// cached per audience until ~30s before expiry, so callers don't hit IAM on
+// every request. `audience` names the service the token is for.
+const s2sCache = new Map<string, { token: string; exp: number }>()
 
-export async function getS2SToken(env: AuthEnv): Promise<string | null> {
+export async function getS2SToken(env: AuthEnv, audience: string): Promise<string | null> {
   const now = Date.now()
-  if (s2sCache && s2sCache.exp - 30_000 > now) return s2sCache.token
+  const hit = s2sCache.get(audience)
+  if (hit && hit.exp - 30_000 > now) return hit.token
   if (!env.IAM_URL || !env.PUBLISH_WEB_CLIENT_ID || !env.PUBLISH_WEB_CLIENT_SECRET) return null
 
   const basic = btoa(`${env.PUBLISH_WEB_CLIENT_ID}:${env.PUBLISH_WEB_CLIENT_SECRET}`)
@@ -153,11 +154,12 @@ export async function getS2SToken(env: AuthEnv): Promise<string | null> {
       Authorization: `Basic ${basic}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: 'grant_type=client_credentials&audience=content-runtime',
+    body: `grant_type=client_credentials&audience=${encodeURIComponent(audience)}`,
+    signal: AbortSignal.timeout(10_000),
   })
   if (!res.ok) return null
   const data = (await res.json()) as { access_token?: string; expires_in?: number }
   if (!data.access_token) return null
-  s2sCache = { token: data.access_token, exp: now + (data.expires_in ?? 3600) * 1000 }
-  return s2sCache.token
+  s2sCache.set(audience, { token: data.access_token, exp: now + (data.expires_in ?? 3600) * 1000 })
+  return data.access_token
 }

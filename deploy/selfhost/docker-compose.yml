@@ -59,6 +59,11 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-}              # true behind a reverse proxy / CDN
       EVENTS: ${EVENTS:-}                        # file → DATA_DIR/_events/*.jsonl
       EVENTS_URL: ${EVENTS_URL:-}
+      # Hosted control plane only:
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-}
+      IAM_URL: ${IAM_URL:-}
+      PUBLISH_WEB_CLIENT_ID: ${PUBLISH_WEB_CLIENT_ID:-}
+      PUBLISH_WEB_CLIENT_SECRET: ${PUBLISH_WEB_CLIENT_SECRET:-}
       EVENTS_TOKEN: ${EVENTS_TOKEN:-}
     volumes:
       - gitdoc-data:/data

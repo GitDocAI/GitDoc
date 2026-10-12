@@ -1044,3 +1044,78 @@ test('admin: the operator API is not on the public port', async () => {
   // Publishing and the site list stay where the CLI expects them.
   assert.equal((await http(s.port, '/api/sites', { headers: admin })).status, 200)
 })
+
+// ------------------------------------------------------------- 404 ---
+
+test('a URL that names no page is a 404, while sections and the home still resolve', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Not Found', pages: DOCS }), 'nf.localhost')
+  const status = async (path) => (await http(s.port, path, { host: 'nf.localhost' })).status
+
+  assert.equal(await status('/'), 200)
+  assert.equal(await status('/guides'), 200, 'a section lands on its first page')
+  assert.equal(await status('/guides/deploy'), 200)
+  assert.equal(await status('/guides/deploy.md'), 200)
+
+  assert.equal(await status('/guides/nope'), 404)
+  assert.equal(await status('/guides/deploy/extra'), 404)
+  assert.equal(await status('/nope'), 404)
+  assert.equal(await status('/nope/deeper/still'), 404)
+  assert.equal(await status('/guides/nope.md'), 404)
+
+  const page = await http(s.port, '/guides/nope', { host: 'nf.localhost' })
+  assert.match(page.text, /Page not found/)
+  assert.doesNotMatch(page.text, /Publish the site to your server/, 'it does not show another page')
+})
+
+// ------------------------------------------- events → control plane ---
+
+test('events: the gitdocai sink reports to the control plane with a service token', async () => {
+  const seen = { iam: [], cp: [] }
+  const srv = createHttpServer((req, res) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    req.on('end', () => {
+      const body = Buffer.concat(chunks).toString()
+      res.setHeader('content-type', 'application/json')
+      if (req.url === '/iam/oauth/token') {
+        seen.iam.push({ auth: req.headers.authorization, body })
+        return res.end(JSON.stringify({ access_token: 'svc-token', expires_in: 3600 }))
+      }
+      if (req.url === '/control-plane/api/v1/analytics/events') {
+        seen.cp.push({ auth: req.headers.authorization, body: JSON.parse(body) })
+        return res.writeHead(202).end('{}')
+      }
+      res.writeHead(404).end('{}')
+    })
+  })
+  await new Promise((ok) => srv.listen(0, '127.0.0.1', ok))
+  cleanup.push(() => srv.close())
+  const url = `http://127.0.0.1:${srv.address().port}`
+
+  const s = await startServer({
+    env: { EVENTS: 'gitdocai', IAM_URL: url, CONTROL_PLANE_URL: url, PUBLISH_WEB_CLIENT_ID: 'cid', PUBLISH_WEB_CLIENT_SECRET: 'csecret' },
+  })
+  await publish(s.port, makeSite({ name: 'Cp Events', pages: DOCS }), 'cp.localhost')
+  await search(s.port, 'cp.localhost', 'docker')
+  await http(s.port, '/guides/deploy', { host: 'cp.localhost', headers: { 'user-agent': 'Mozilla/5.0 (compatible; ClaudeBot/1.0)' } })
+
+  for (let i = 0; i < 50 && seen.cp.length < 2; i++) await new Promise((r) => setTimeout(r, 100))
+  assert.ok(seen.cp.length >= 2, `control plane received ${seen.cp.length} events`)
+  assert.equal(seen.iam[0].auth, 'Basic ' + Buffer.from('cid:csecret').toString('base64'))
+  assert.match(seen.iam[0].body, /audience=control-plane/)
+  assert.equal(seen.iam.length, 1, 'the service token is cached')
+  assert.ok(seen.cp.every((e) => e.auth === 'Bearer svc-token'))
+
+  const m = JSON.parse(readFileSync(join(s.data, '_domains/index.json'), 'utf-8'))['cp.localhost']
+  const sEv = seen.cp.find((e) => e.body.event_type === 'search').body
+  assert.equal(sEv.documentation_id, m.docId)
+  assert.equal(sEv.organization_id, m.orgId)
+  assert.equal(sEv.query_text, 'docker')
+  assert.equal(sEv.was_answered, true)
+  const pv = seen.cp.find((e) => e.body.event_type === 'page_view').body
+  assert.equal(pv.visitor_type, 'bot')
+  assert.match(pv.bot_name, /claude/i)
+  assert.equal(pv.path, '/guides/deploy')
+  assert.equal(JSON.stringify(sEv).includes('result_count'), false, 'only fields of the control plane contract')
+})

@@ -30,6 +30,7 @@ import {
   saveSettings,
   verifyPassword,
 } from '../src/lib/settings'
+import { eventSinks } from '../src/lib/events'
 import { sign, unsign } from '../src/lib/siteAuth'
 import { readUsage } from '../src/lib/usage'
 // @ts-expect-error bundled as text by the build (see scripts/assemble-engine.mjs)
@@ -198,7 +199,7 @@ function instance() {
       embeddingModel: env.AI_EMBEDDING_MODEL || null,
     },
     search: { backend, error, opensearchHost: env.OPENSEARCH_URL ? new URL(env.OPENSEARCH_URL).host : null },
-    events: env.EVENTS_URL ? 'http' : env.EVENTS === 'file' ? 'file' : 'off',
+    events: eventSinks(env).join(', ') || 'off',
     trustProxy: env.TRUST_PROXY === 'true',
     publishEnabled: !!env.PUBLISH_TOKEN,
     publicUrl: env.PUBLIC_URL || null,

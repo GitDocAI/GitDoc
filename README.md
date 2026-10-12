@@ -106,7 +106,8 @@ npm test        # starts the real server and publishes through its HTTP API
 | `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD`, `OPENSEARCH_INSECURE` | Use OpenSearch instead of the built-in index. |
 | `RATE_SEARCH_PER_MIN`, `RATE_ASK_PER_MIN`, `ASK_DAILY_LIMIT` | Limits (defaults 120, 10, 1000). Ask costs money: keep a cap. |
 | `TRUST_PROXY` | `true` behind a proxy/CDN so limits count real visitors. |
-| `EVENTS`, `EVENTS_URL`, `EVENTS_TOKEN` | Record page views, searches and questions (`file` or an HTTP endpoint). Off by default; no IP is stored. |
+| `EVENTS`, `EVENTS_URL`, `EVENTS_TOKEN` | Record page views, searches and questions. `EVENTS` is a comma-separated list of `file` and `gitdocai`; `EVENTS_URL` POSTs each event as JSON. Off by default; no IP is stored. |
+| `CONTROL_PLANE_URL`, `IAM_URL`, `PUBLISH_WEB_CLIENT_ID`, `PUBLISH_WEB_CLIENT_SECRET` | For `EVENTS=gitdocai`: report to the hosted control plane's analytics with a service token from IAM. |
 
 ### OpenSearch
 

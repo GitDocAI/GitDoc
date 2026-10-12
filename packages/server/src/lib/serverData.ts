@@ -37,6 +37,8 @@ export interface SsrBundle {
   /** Full entry JSON including raw MDX `content`, used by the React island. */
   currentEntryFull: DocEntry | null
   currentHtml: string | null
+  /** The URL names a section or page that does not exist (answer 404). */
+  notFound?: boolean
 }
 
 export async function loadSsrBundle(
@@ -143,10 +145,11 @@ export async function loadSsrBundle(
   //    `segments` is the path with any version prefix already stripped
   //    in step 2, so segments[0] is the section slug.
   // -------------------------------------------------------------------
-  const activeSection =
-    (segments[0] ? sections.find((s) => s.slug === segments[0]) : null) ??
-    sections[0] ??
-    null
+  const namedSection = segments[0] ? (sections.find((s) => s.slug === segments[0]) ?? null) : null
+  // `/` and `/{version}` land on the first section; any other unknown first
+  // segment is a bad URL, not a reason to show the home page.
+  const sectionMissed = segments.length > 0 && !namedSection
+  const activeSection = namedSection ?? sections[0] ?? null
 
   if (!activeSection) {
     return {
@@ -180,6 +183,7 @@ export async function loadSsrBundle(
   if (entryPathSegments.length > 0) {
     matchedEntry = findEntryBySlugPath(activeSectionTree, entryPathSegments)
   }
+  const entryMissed = entryPathSegments.length > 0 && !matchedEntry
   if (!matchedEntry) {
     matchedEntry = firstPage(activeSectionTree)
   }
@@ -211,6 +215,7 @@ export async function loadSsrBundle(
     currentEntry: matchedEntry,
     currentEntryFull,
     currentHtml,
+    notFound: sectionMissed || entryMissed,
   }
 }
 
