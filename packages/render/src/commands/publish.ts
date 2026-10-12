@@ -26,6 +26,16 @@ interface PageIndexEntry {
   lastmod?: string
 }
 
+/** One page of the search corpus (`docs/{docId}/search-docs.json`). */
+interface SearchDoc {
+  entry_id: string
+  section_id: string
+  version_id: string
+  path: string
+  title: string
+  content: string
+}
+
 const RENDERER_VERSION = '0.1.0'
 
 /**
@@ -96,6 +106,9 @@ export async function runPublish(input: PublishInput): Promise<PublishResult> {
   // sitemap.xml + llms.txt the Worker serves. Accumulated in document
   // order across sections.
   const pagesIndex: PageIndexEntry[] = []
+  // Same pages, with their markdown, for the search backend. Written beside
+  // pages-index.json so a server can (re)index without re-rendering.
+  const searchDocs: SearchDoc[] = []
 
   // -------------------------------------------------------------------
   // 1. Documentation header + versions
@@ -181,7 +194,7 @@ export async function runPublish(input: PublishInput): Promise<PublishResult> {
       // order after the (out-of-order) concurrent batch finishes.
       const indexResults = new Map<
         string,
-        { title: string; description?: string; lastmod?: string }
+        { title: string; description?: string; lastmod?: string; markdown: string }
       >()
 
       await forEachWithConcurrency(pageEntries, 8, async ({ entry: entryStub }) => {
@@ -207,13 +220,14 @@ export async function runPublish(input: PublishInput): Promise<PublishResult> {
             `docs/${docId}/versions/${version.id}` +
             `/sections/${section.id}/entries/${full.id}`
 
+          const markdown = contentToMarkdown(rewritten)
           await Promise.all([
             r2.putJson(base + '.json', entryForStorage),
             r2.putHtml(base + '.html', page.html),
             r2.putJson(base + '.meta.json', page.meta),
             // Clean markdown for LLM ingestion + the `…​.md` page routes.
             // MDX passes through as-is; Tiptap JSON is serialized to MDX.
-            r2.putText(base + '.md', contentToMarkdown(rewritten), 'text/markdown; charset=utf-8'),
+            r2.putText(base + '.md', markdown, 'text/markdown; charset=utf-8'),
           ])
           uploaded += 4
 
@@ -222,6 +236,7 @@ export async function runPublish(input: PublishInput): Promise<PublishResult> {
               title: page.meta.title,
               description: page.meta.description,
               lastmod: page.meta.updated_at,
+              markdown,
             })
           }
         } catch (err) {
@@ -246,6 +261,14 @@ export async function runPublish(input: PublishInput): Promise<PublishResult> {
             description: data.description,
             lastmod: data.lastmod,
           })
+          searchDocs.push({
+            entry_id: entry.id,
+            section_id: section.id,
+            version_id: version.id,
+            path: `/${[sectionSlug, ...slugPath].filter(Boolean).join('/')}`,
+            title: data.title,
+            content: data.markdown,
+          })
         }
       }
     }
@@ -254,7 +277,8 @@ export async function runPublish(input: PublishInput): Promise<PublishResult> {
   // Page index for sitemap.xml + llms.txt (default version, public pages).
   try {
     await r2.putJson(`docs/${docId}/pages-index.json`, pagesIndex)
-    uploaded++
+    await r2.putJson(`docs/${docId}/search-docs.json`, searchDocs)
+    uploaded += 2
   } catch (err) {
     errors.push({ where: 'r2', message: `pages-index upload: ${describe(err)}` })
   }

@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { clearContentCache } from '../lib/contentSource'
+import { searchBackend, type SearchDoc } from '../lib/search'
 
 export const prerender = false
 
@@ -160,7 +161,22 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     clearContentCache()
-    return json({ ok: true, hostname, result })
+
+    // 5. Index the pages for search. The site is already live, so a search
+    //    backend that is down degrades search, not the publish.
+    let search: Record<string, unknown>
+    try {
+      const domains = JSON.parse(await readFile(join(dataDir, '_domains', 'index.json'), 'utf-8'))
+      const m = domains[hostname] as { orgId?: string; docId?: string } | undefined
+      if (!m?.docId) throw new Error(`no mapping for ${hostname}`)
+      const docs = JSON.parse(
+        await readFile(join(dataDir, 'docs', m.docId, 'search-docs.json'), 'utf-8'),
+      ) as SearchDoc[]
+      search = { ...(await searchBackend().replace({ orgId: m.orgId ?? '', docId: m.docId }, docs)) }
+    } catch (e) {
+      search = { error: (e as Error).message }
+    }
+    return json({ ok: true, hostname, result, search })
   } finally {
     busy = false
     await rm(work, { recursive: true, force: true })

@@ -73,9 +73,29 @@ npm run build
 npm test        # starts the real server and publishes through its HTTP API
 ```
 
+## Search
+
+The search box works out of the box: pages are indexed when you publish, with a built-in BM25 index (title weighs double, prefixes match as you type, accents are folded). Nothing to run.
+
+For larger sites, or if you already operate OpenSearch, point the server at it:
+
+| Variable | Meaning |
+|---|---|
+| `SEARCH_BACKEND` | `embedded` or `opensearch`. Default: `opensearch` if `OPENSEARCH_URL` is set, else `embedded`. |
+| `OPENSEARCH_URL` | e.g. `http://opensearch:9200` (credentials may be in the URL). |
+| `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD` | Basic auth. |
+| `OPENSEARCH_INSECURE` | `true` to accept a self-signed certificate. |
+| `EMBEDDINGS_URL`, `EMBEDDINGS_MODEL`, `EMBEDDINGS_API_KEY` | Any OpenAI-compatible embeddings API (OpenAI, Ollama's `/v1`, vLLM…). Turns on hybrid text + vector search. OpenSearch only. |
+
+`docker compose --profile opensearch up -d` (in `deploy/selfhost`) also starts a single-node OpenSearch on the compose network.
+
+The OpenSearch adapter uses the same index name (`doc_{org}_{doc}`), document fields, mapping and query as the hosted product, so an index written by one is readable by the other. If the search backend is down while you publish, the site still goes live and the publish response carries a `search.error`.
+
+Add another engine by implementing `SearchBackend` (`packages/server/src/lib/search/types.ts`): `replace`, `remove`, `search`.
+
 ## Known limitations
 
-- **Search and "Ask AI" are not available in this build.** They call a separate backend that is not part of this repository; without it the search box returns an error.
+- **"Ask AI" is not available in this build.** It needs a language model and a retrieval backend that are not part of this repository; the search box (see [Search](#search)) works.
 - **Private sites need an identity provider** you run yourself (see `DOCS_PRIVATE`).
 - The package is alpha: the HTTP API and the on-disk format may still change.
 

@@ -186,3 +186,186 @@ test('the engine runs from any directory, with no node_modules next to it', asyn
   const page = await http(s.port, '/guides/p', { host: 'moved.localhost' })
   assert.match(page.text, /Moved page/)
 })
+
+// ---------------------------------------------------------------- search ---
+
+const search = (port, host, query, extra = {}) =>
+  http(port, '/api/search', {
+    host,
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query, ...extra }),
+  }).then((r) => ({ status: r.status, ...JSON.parse(r.text) }))
+
+const GUIDE = [
+  ['install', 'Installation', 'Run `npm install gitdoc-cli` to get the command line tool.'],
+  ['deploy', 'Deploying', 'Publish the site to your own server with a Docker container.'],
+  ['faq', 'Preguntas frecuentes', 'Configuración de dominios y certificados.'],
+]
+
+test('search: the embedded backend ranks, highlights and isolates sites', async () => {
+  const s = await startServer()
+  const r = await publish(s.port, makeSite({ name: 'Find Me', pages: GUIDE }), 'find.localhost')
+  assert.equal(r.status, 200, r.text)
+  const out = JSON.parse(r.text)
+  assert.deepEqual([out.search.backend, out.search.indexed, out.search.semantic], ['embedded', 3, false])
+
+  const hit = await search(s.port, 'find.localhost', 'docker')
+  assert.equal(hit.status, 200)
+  assert.equal(hit.results[0].path, '/guides/deploy')
+  assert.equal(hit.results[0].title, 'Deploying')
+  assert.match(hit.results[0].highlights.join(' '), /<mark>Docker<\/mark>/)
+
+  // Title beats body, a prefix matches (search as you type), accents fold.
+  assert.equal((await search(s.port, 'find.localhost', 'install')).results[0].path, '/guides/install')
+  assert.equal((await search(s.port, 'find.localhost', 'instal')).results[0].path, '/guides/install')
+  assert.equal((await search(s.port, 'find.localhost', 'configuracion')).results[0].path, '/guides/faq')
+  assert.deepEqual((await search(s.port, 'find.localhost', 'zzzznothing')).results, [])
+
+  // Another site's pages never leak in, and a republish replaces the index.
+  await publish(s.port, makeSite({ name: 'Other', pages: [['x', 'Kubernetes', 'Helm chart notes.']] }), 'other.localhost')
+  assert.deepEqual((await search(s.port, 'other.localhost', 'docker')).results, [])
+  assert.equal((await search(s.port, 'other.localhost', 'helm')).results.length, 1)
+  await publish(s.port, makeSite({ name: 'Find Me', pages: [['only', 'Only page', 'Nothing about containers.']] }), 'find.localhost')
+  assert.deepEqual((await search(s.port, 'find.localhost', 'docker')).results, [])
+
+  assert.equal((await http(s.port, '/api/search', { host: 'find.localhost', method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 400)
+})
+
+/** A stand-in OpenSearch (and OpenAI-style embeddings endpoint) that records what it is sent. */
+async function fakeOpenSearch({ dim = 0 } = {}) {
+  const { createServer: srv } = await import('node:http')
+  const seen = []
+  const indices = new Set()
+  const server = srv((req, res) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf-8')
+      const url = req.url
+      seen.push({ method: req.method, url, auth: req.headers.authorization, raw })
+      const send = (code, body = {}) => {
+        res.writeHead(code, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(body))
+      }
+      if (url === '/embeddings') {
+        const { input } = JSON.parse(raw)
+        return send(200, { data: input.map((_, index) => ({ index, embedding: Array.from({ length: dim }, (_, i) => (i + 1) / dim) })) })
+      }
+      const idx = url.split('?')[0].split('/')[1]
+      if (req.method === 'HEAD') return send(indices.has(idx) ? 200 : 404)
+      if (req.method === 'PUT') return indices.add(idx), send(200, { acknowledged: true })
+      if (url === '/_bulk') return send(200, { errors: false, items: [] })
+      if (url.endsWith('/_search')) {
+        return send(200, {
+          hits: {
+            hits: [
+              {
+                _score: 3.5,
+                _source: { entry_id: 'e1', section_id: 's1', version_id: 'v1', path: '/guides/deploy', title: 'Deploying' },
+                highlight: { content: ['run <mark>docker</mark>'] },
+              },
+            ],
+          },
+        })
+      }
+      send(200, {})
+    })
+  })
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok))
+  cleanup.push(() => server.close())
+  return { url: `http://127.0.0.1:${server.address().port}`, seen }
+}
+
+test('search: the OpenSearch adapter writes and queries the hosted index shape', async () => {
+  const os = await fakeOpenSearch()
+  const s = await startServer({ env: { OPENSEARCH_URL: os.url, OPENSEARCH_USERNAME: 'admin', OPENSEARCH_PASSWORD: 'pw' } })
+  const r = await publish(s.port, makeSite({ name: 'Os Site', pages: GUIDE }), 'os.localhost')
+  const out = JSON.parse(r.text)
+  assert.deepEqual([out.search.backend, out.search.indexed, out.search.semantic], ['opensearch', 3, false], r.text)
+
+  const put = os.seen.find((x) => x.method === 'PUT')
+  assert.match(put.url, /^\/doc_[\w-]+_[\w-]+$/) // doc_{org}_{doc}
+  const mapping = JSON.parse(put.raw)
+  assert.equal(mapping.mappings.properties.doc_type.type, 'keyword')
+  assert.equal(mapping.mappings.properties.doc_embedding, undefined) // text-only: no vectors configured
+  assert.equal(put.auth, 'Basic ' + Buffer.from('admin:pw').toString('base64'))
+
+  const bulk = os.seen.find((x) => x.url === '/_bulk').raw.trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(bulk[0].index._index, put.url.slice(1))
+  assert.equal(bulk[1].doc_type, 'doc_entry')
+  assert.equal(bulk[1].path, '/guides/install')
+  assert.ok(!bulk[1].content.includes('`'), 'content is plain text')
+  assert.ok(os.seen.some((x) => x.url.includes('_delete_by_query')), 'stale pages are removed after the upsert')
+
+  const found = await search(s.port, 'os.localhost', 'docker', { limit: 5 })
+  assert.deepEqual(found.results[0], {
+    version_id: 'v1', section_id: 's1', entry_id: 'e1', path: '/guides/deploy', title: 'Deploying',
+    highlights: ['run <mark>docker</mark>'], score: 3.5,
+  })
+  const q = JSON.parse(os.seen.filter((x) => x.url.endsWith('/_search')).at(-1).raw)
+  assert.equal(q.size, 5)
+  assert.equal(q.query.bool.should[0].match.title.boost, 2)
+  assert.equal(q.query.bool.should.length, 2) // no knn clause without embeddings
+})
+
+test('search: with an embeddings endpoint the index gets vectors and queries use knn', async () => {
+  const os = await fakeOpenSearch({ dim: 8 })
+  const s = await startServer({ env: { OPENSEARCH_URL: os.url, EMBEDDINGS_URL: os.url, EMBEDDINGS_MODEL: 'test-model' } })
+  const out = JSON.parse((await publish(s.port, makeSite({ name: 'Vec Site', pages: GUIDE }), 'vec.localhost')).text)
+  assert.equal(out.search.semantic, true, JSON.stringify(out.search))
+
+  const mapping = JSON.parse(os.seen.find((x) => x.method === 'PUT').raw)
+  assert.equal(mapping.mappings.properties.doc_embedding.type, 'knn_vector')
+  assert.equal(mapping.mappings.properties.doc_embedding.dimension, 8)
+  const doc = JSON.parse(os.seen.find((x) => x.url === '/_bulk').raw.trim().split('\n')[1])
+  assert.equal(doc.doc_embedding.length, 8)
+
+  await search(s.port, 'vec.localhost', 'anything')
+  const q = JSON.parse(os.seen.filter((x) => x.url.endsWith('/_search')).at(-1).raw)
+  assert.equal(q.query.bool.should.at(-1).knn.doc_embedding.k, 10)
+})
+
+test('search: an unreachable OpenSearch degrades search, not the publish', async () => {
+  const s = await startServer({ env: { SEARCH_BACKEND: 'opensearch', OPENSEARCH_URL: 'http://127.0.0.1:9' } })
+  const r = await publish(s.port, makeSite({ name: 'Down', pages: GUIDE }), 'down.localhost')
+  assert.equal(r.status, 200)
+  assert.ok(JSON.parse(r.text).search.error)
+  assert.equal((await http(s.port, '/guides/install', { host: 'down.localhost' })).status, 200)
+  assert.equal((await search(s.port, 'down.localhost', 'docker')).status, 503)
+})
+
+// Against a real cluster, e.g.:
+//   docker run -d -p 9200:9200 -e discovery.type=single-node -e DISABLE_SECURITY_PLUGIN=true \
+//     -e DISABLE_INSTALL_DEMO_CONFIG=true opensearchproject/opensearch:2.19.1
+//   GITDOC_TEST_OPENSEARCH_URL=http://127.0.0.1:9200 npm test
+test('search: against a real OpenSearch', { skip: !process.env.GITDOC_TEST_OPENSEARCH_URL }, async () => {
+  const url = process.env.GITDOC_TEST_OPENSEARCH_URL
+  const s = await startServer({ env: { OPENSEARCH_URL: url } })
+  const name = `Real ${Date.now()}`
+  const host = `real-${Date.now()}.localhost`
+  const out = JSON.parse((await publish(s.port, makeSite({ name, pages: GUIDE }), host)).text)
+  assert.deepEqual([out.search.backend, out.search.indexed, out.search.error], ['opensearch', 3, undefined], JSON.stringify(out))
+
+  const hit = await search(s.port, host, 'docker')
+  assert.equal(hit.status, 200, JSON.stringify(hit))
+  assert.equal(hit.results[0].path, '/guides/deploy')
+  assert.match(hit.results[0].highlights.join(' '), /<mark>Docker<\/mark>/i)
+
+  // Republishing a smaller site removes the pages that are gone.
+  await publish(s.port, makeSite({ name, pages: [GUIDE[0]] }), host)
+  const after = await search(s.port, host, 'docker')
+  assert.deepEqual(after.results, [])
+  assert.equal((await search(s.port, host, 'installation')).results.length, 1)
+})
+
+test('search: real OpenSearch with vectors (knn mapping and query)', { skip: !process.env.GITDOC_TEST_OPENSEARCH_URL }, async () => {
+  const emb = await fakeOpenSearch({ dim: 8 }) // only its /embeddings is used
+  const s = await startServer({ env: { OPENSEARCH_URL: process.env.GITDOC_TEST_OPENSEARCH_URL, EMBEDDINGS_URL: emb.url } })
+  const host = `knn-${Date.now()}.localhost`
+  const out = JSON.parse((await publish(s.port, makeSite({ name: `Knn ${Date.now()}`, pages: GUIDE }), host)).text)
+  assert.equal(out.search.semantic, true, JSON.stringify(out))
+  const hit = await search(s.port, host, 'docker')
+  assert.equal(hit.status, 200, JSON.stringify(hit))
+  assert.ok(hit.results.length >= 1)
+})
