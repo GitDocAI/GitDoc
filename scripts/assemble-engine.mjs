@@ -4,7 +4,7 @@
 //   engine/server/entry.mjs   the server   (GITDOC_ENGINE_SERVER)
 //   engine/client/            its static assets
 //   engine/render.js          the renderer  (GITDOC_ENGINE_RENDER)
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
@@ -28,4 +28,27 @@ writeFileSync(
   resolve(out, 'engine.json'),
   JSON.stringify({ name: 'gitdoc-engine', version, server: 'server/entry.mjs', renderCli: 'render.js' }, null, 2) + '\n',
 )
+
+// engine/ is also what gets published to npm as @gitdocai/engine: the CLI
+// downloads it on first `gitdoc dev`. Same license as the repository.
+writeFileSync(
+  resolve(out, 'package.json'),
+  JSON.stringify(
+    {
+      name: '@gitdocai/engine',
+      version,
+      description: 'The gitdoc rendering engine: server and renderer, prebuilt. Used by the gitdoc CLI.',
+      license: 'AGPL-3.0-only',
+      repository: { type: 'git', url: 'git+https://github.com/GitDocAI/GitDoc.git' },
+      homepage: 'https://gitdoc.ai',
+      engines: { node: '>=20' },
+      publishConfig: { access: 'public' },
+    },
+    null,
+    2,
+  ) + '\n',
+)
+for (const f of ['LICENSE', 'NOTICE']) {
+  if (existsSync(resolve(root, f))) copyFileSync(resolve(root, f), resolve(out, f))
+}
 console.log(`engine/ assembled (v${version})`)

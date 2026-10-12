@@ -1,0 +1,33 @@
+name: Release engine
+
+# Publishes engine/ as @gitdocai/engine, which the gitdoc CLI downloads on first
+# use. Tag the commit `engine-v<version>`; the version must match
+# packages/server/package.json. Needs the NPM_TOKEN secret.
+on:
+  push:
+    tags: ["engine-v*"]
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Tag matches the engine version
+        run: |
+          v=$(node -p "require('./engine/package.json').version")
+          test "engine-v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != engine v$v"; exit 1; }
+      - run: npm publish ./engine --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
