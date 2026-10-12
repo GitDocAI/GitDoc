@@ -28,14 +28,22 @@ function freePort() {
   })
 }
 
+// public port → admin port, so the operator API can be reached from a server handle
+const adminPorts = new Map()
+const adminOf = (port) => adminPorts.get(port)
+
 async function startServer({ dir = ENGINE, env = {} } = {}) {
   const port = await freePort()
+  const admin = await freePort()
+  adminPorts.set(port, admin)
   const data = tmp()
-  const child = spawn(process.execPath, [join(dir, 'server/entry.mjs')], {
+  const child = spawn(process.execPath, [join(dir, 'start.mjs')], {
     env: {
       PATH: process.env.PATH,
       HOST: '127.0.0.1',
       PORT: String(port),
+      ADMIN_HOST: '127.0.0.1',
+      ADMIN_PORT: String(admin),
       DATA_DIR: data,
       PUBLISH_TOKEN: TOKEN,
       RENDER_CLI_PATH: join(dir, 'render.js'),
@@ -47,12 +55,13 @@ async function startServer({ dir = ENGINE, env = {} } = {}) {
   for (let i = 0; i < 100; i++) {
     try {
       const r = await http(port, '/login')
-      if (r.status) break
+      const a = await http(admin, '/admin/api/state')
+      if (r.status && a.status) break
     } catch {
       await new Promise((r) => setTimeout(r, 100))
     }
   }
-  return { port, data, stop: () => child.kill() }
+  return { port, admin, data, stop: () => child.kill() }
 }
 
 /** `fetch` can't set Host; the server routes sites by it, so use http.request. */
@@ -592,16 +601,16 @@ test('reindex: rebuilds search from files already on disk (shared volume setups)
   assert.deepEqual((await search(s.port, 'vol.localhost', 'docker')).results, [])
 
   const auth = { authorization: `Bearer ${TOKEN}` }
-  assert.equal((await http(s.port, '/api/reindex', { method: 'POST' })).status, 401)
-  const r = await http(s.port, '/api/reindex?hostname=vol.localhost', { method: 'POST', headers: auth })
+  assert.equal((await http(adminOf(s.port), '/api/reindex', { method: 'POST' })).status, 401)
+  const r = await http(adminOf(s.port), '/api/reindex?hostname=vol.localhost', { method: 'POST', headers: auth })
   assert.equal(r.status, 200, r.text)
   assert.equal(JSON.parse(r.text).sites['vol.localhost'].indexed, 3)
   assert.equal((await search(s.port, 'vol.localhost', 'docker')).results[0].path, '/guides/deploy')
 
-  const unknown = await http(s.port, '/api/reindex?hostname=nope.localhost', { method: 'POST', headers: auth })
+  const unknown = await http(adminOf(s.port), '/api/reindex?hostname=nope.localhost', { method: 'POST', headers: auth })
   assert.equal(unknown.status, 500)
   // With no hostname it reindexes every site.
-  const all = JSON.parse((await http(s.port, '/api/reindex', { method: 'POST', headers: auth })).text)
+  const all = JSON.parse((await http(adminOf(s.port), '/api/reindex', { method: 'POST', headers: auth })).text)
   assert.deepEqual(Object.keys(all.sites), ['vol.localhost'])
 })
 
@@ -632,7 +641,7 @@ test('geo: the visitor country comes from the edge header, only behind a trusted
 
 const admin = { authorization: `Bearer ${TOKEN}` }
 const putSettings = (port, host, body) =>
-  http(port, `/api/settings?hostname=${host}`, {
+  http(adminOf(port), `/api/settings?hostname=${host}`, {
     method: 'PUT',
     headers: { ...admin, 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -646,7 +655,7 @@ test('settings: quotas are per site, set at runtime by the operator, and persist
   const ask = (host) => post(s.port, host, '/api/ask', { question: 'docker?' })
 
   // Needs the token, validates its input, and rejects what it does not know.
-  assert.equal((await http(s.port, '/api/settings?hostname=qa.localhost')).status, 401)
+  assert.equal((await http(adminOf(s.port), '/api/settings?hostname=qa.localhost')).status, 401)
   assert.equal((await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: 'many' } })).status, 400)
   assert.equal((await putSettings(s.port, 'qa.localhost', { quota: { ask_pr_day: 1 } })).status, 400)
   assert.equal((await putSettings(s.port, 'qa.localhost', { bogus: {} })).status, 400)
@@ -666,7 +675,7 @@ test('settings: quotas are per site, set at runtime by the operator, and persist
   assert.equal((await ask('qb.localhost')).status, 200, 'another site is unaffected')
 
   // Usage is readable by the operator.
-  const used = JSON.parse((await http(s.port, '/api/usage?hostname=qa.localhost', { headers: admin })).text)
+  const used = JSON.parse((await http(adminOf(s.port), '/api/usage?hostname=qa.localhost', { headers: admin })).text)
   assert.equal(used.ask_today, 2)
 
   // Raising the limit takes effect at once, with no restart.
@@ -680,7 +689,7 @@ test('settings: quotas are per site, set at runtime by the operator, and persist
   await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: 0 } })
   assert.equal((await ask('qa.localhost')).status, 429)
 
-  const read = JSON.parse((await http(s.port, '/api/settings?hostname=qa.localhost', { headers: admin })).text)
+  const read = JSON.parse((await http(adminOf(s.port), '/api/settings?hostname=qa.localhost', { headers: admin })).text)
   assert.deepEqual(read.settings, { quota: { ask_per_day: 0 } })
 })
 
@@ -777,7 +786,7 @@ test('auth: a shared password protects the site, and the API, until it is change
   assert.equal((await getPage(s.port, 'pw2.localhost', '/guides/deploy', cookie)).status, 302)
 
   // Settings read back masked; sending the mask keeps the password.
-  const read = JSON.parse((await http(s.port, '/api/settings?hostname=pw.localhost', { headers: admin })).text)
+  const read = JSON.parse((await http(adminOf(s.port), '/api/settings?hostname=pw.localhost', { headers: admin })).text)
   assert.equal(read.settings.auth.providers[0].password, '***')
   assert.doesNotMatch(JSON.stringify(read), /scrypt/)
   const keep = await putSettings(s.port, 'pw.localhost', { auth: { enabled: true, providers: [{ id: 'team', type: 'password', password: '***' }] } })
@@ -909,7 +918,7 @@ test('auth: OpenID Connect, with allow rules, over code + PKCE', async () => {
   assert.match((await finish(tx, { code: 'wrong-code' })).headers.location, /error=login_failed/)
 
   // The secret never comes back through the API.
-  const read = (await http(s.port, '/api/settings?hostname=oidc.localhost', { headers: admin })).text
+  const read = (await http(adminOf(s.port), '/api/settings?hostname=oidc.localhost', { headers: admin })).text
   assert.doesNotMatch(read, /shh/)
 })
 
@@ -953,4 +962,85 @@ test('auth: a gitdocai provider verifies the hosted IAM’s tokens', async () =>
   assert.equal(good.status, 200)
   const cookie = (good.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ')
   assert.equal((await getPage(s.port, 'iam.localhost', '/guides/deploy', cookie)).status, 200)
+})
+
+// ------------------------------------------------------- admin server ---
+
+const adminJson = (port, path, { method = 'GET', body, cookie, headers = {} } = {}) =>
+  http(adminOf(port), path, {
+    method,
+    headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}), ...headers },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then((r) => ({ status: r.status, headers: r.headers, json: r.text.startsWith('{') ? JSON.parse(r.text) : r.text }))
+
+test('admin: first run asks for a password, proven with the server token', async () => {
+  const s = await startServer()
+  assert.deepEqual((await adminJson(s.port, '/admin/api/state')).json, { needsSetup: true, authenticated: false, publicUrl: null })
+
+  const ui = await adminJson(s.port, '/')
+  assert.equal(ui.status, 200)
+  assert.match(ui.json, /GitDoc admin/)
+  assert.match(ui.headers['content-security-policy'], /frame-ancestors 'none'/)
+
+  // Nothing is reachable before onboarding.
+  assert.equal((await adminJson(s.port, '/api/sites')).status, 401)
+  const wrongToken = await adminJson(s.port, '/admin/api/setup', { method: 'POST', body: { token: 'nope', password: 'a long password 1' } })
+  assert.equal(wrongToken.status, 401)
+  const short = await adminJson(s.port, '/admin/api/setup', { method: 'POST', body: { token: TOKEN, password: 'short' } })
+  assert.equal(short.status, 400)
+
+  const done = await adminJson(s.port, '/admin/api/setup', { method: 'POST', body: { token: TOKEN, password: 'a long password 1' } })
+  assert.equal(done.status, 200)
+  const cookie = cookieHeader(done)
+  assert.match(done.headers['set-cookie'][0], /HttpOnly; SameSite=Strict/)
+  assert.equal((await adminJson(s.port, '/admin/api/state', { cookie })).json.authenticated, true)
+
+  // It cannot be claimed twice, and the password is stored hashed.
+  assert.equal((await adminJson(s.port, '/admin/api/setup', { method: 'POST', body: { token: TOKEN, password: 'another password 2' } })).status, 409)
+  assert.doesNotMatch(readFileSync(join(s.data, '_secrets/admin.json'), 'utf-8'), /a long password/)
+
+  const login = await adminJson(s.port, '/admin/api/login', { method: 'POST', body: { password: 'a long password 1' } })
+  assert.equal(login.status, 200)
+  assert.equal((await adminJson(s.port, '/admin/api/login', { method: 'POST', body: { password: 'wrong' } })).status, 401)
+})
+
+test('admin: the session needs the custom header to change anything, and the token is for sessions only', async () => {
+  const s = await startServer({ env: { ADMIN_PASSWORD: 'preset admin password' } })
+  assert.equal((await adminJson(s.port, '/admin/api/state')).json.needsSetup, false, 'ADMIN_PASSWORD skips onboarding')
+  await publish(s.port, makeSite({ name: 'Adm Site', pages: DOCS }), 'adm.localhost')
+  const cookie = cookieHeader(await adminJson(s.port, '/admin/api/login', { method: 'POST', body: { password: 'preset admin password' } }))
+
+  // Reading works with the cookie; writing without the header is refused (CSRF).
+  const sites = await adminJson(s.port, '/api/sites', { cookie })
+  assert.equal(sites.json.sites[0].hostname, 'adm.localhost')
+  assert.equal(sites.json.sites[0].pages, 3)
+  assert.equal(sites.json.sites[0].search.backend, 'embedded')
+  const noHeader = await adminJson(s.port, '/api/settings?hostname=adm.localhost', { method: 'PUT', cookie, body: { quota: { ask_per_day: 1 } } })
+  assert.equal(noHeader.status, 403)
+  const withHeader = await adminJson(s.port, '/api/settings?hostname=adm.localhost', {
+    method: 'PUT', cookie, headers: { 'x-gitdoc-admin': '1' }, body: { quota: { ask_per_day: 1 } },
+  })
+  assert.equal(withHeader.status, 200)
+
+  // The publish token is shown to a person, never to automation tokens.
+  assert.equal((await adminJson(s.port, '/admin/api/token', { cookie })).json.token, TOKEN)
+  assert.equal((await adminJson(s.port, '/admin/api/token', { headers: admin })).status, 403)
+  // The same operator API answers to the Bearer token, for a control plane.
+  assert.equal((await adminJson(s.port, '/api/usage?hostname=adm.localhost', { headers: admin })).status, 200)
+  const inst = (await adminJson(s.port, '/admin/api/instance', { cookie })).json
+  assert.equal(inst.search.backend, 'embedded')
+  assert.equal(inst.publishEnabled, true)
+})
+
+test('admin: the operator API is not on the public port', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Pub Only', pages: DOCS }), 'po.localhost')
+  for (const [method, path] of [['GET', '/api/settings?hostname=po.localhost'], ['GET', '/api/usage?hostname=po.localhost'], ['POST', '/api/reindex']]) {
+    const r = await http(s.port, path, { host: 'po.localhost', method, headers: admin })
+    // Whatever the catch-all renders, it is not the operator API.
+    assert.doesNotMatch(r.headers['content-type'] ?? '', /json/, `${path} answered JSON on the public port`)
+    assert.doesNotMatch(r.text, /"settings"|"ask_today"|"effective"/)
+  }
+  // Publishing and the site list stay where the CLI expects them.
+  assert.equal((await http(s.port, '/api/sites', { headers: admin })).status, 200)
 })

@@ -1,10 +1,10 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 /**
  * Per-site settings owned by the OPERATOR of the server, changed at runtime
- * through the admin API (`/api/settings`), never baked into the docs.
+ * through the admin server (a separate port; see admin/server.ts), never baked into the docs.
  *
  *   docs repo (gitdocai.json)   what the author controls: pages, theme,
  *                               whether the assistant panel is shown, …
@@ -14,12 +14,12 @@ import { join, resolve } from 'node:path'
  *   environment                 defaults for the whole instance, and the
  *                               engine's own secrets.
  *
- * On a self-hosted server the operator is you (curl, or `gitdoc settings`).
+ * On a self-hosted server the operator is you (the admin panel, or curl).
  * In the hosted product the control plane writes them when a plan changes.
  *
  * Stored in DATA_DIR/_settings/<docId>.json, keyed by documentation id so a
- * hostname change keeps them. Read per request through a short cache, so a
- * change applies without restarting.
+ * hostname change keeps them. Read per request (validated against the file), so
+ * a change made by the admin server applies at once, without restarting.
  */
 
 /** `null` (or -1) means "no limit"; 0 means "none allowed". */
@@ -278,8 +278,9 @@ export function verifyPassword(password: string, stored: string | undefined): bo
   }
 }
 
-const TTL_MS = 5_000
-const cache = new Map<string, { exp: number; value: SiteSettings }>()
+// Settings are written by another process (the admin server), so the cache is
+// validated against the file on every read: one stat, no TTL to wait out.
+const cache = new Map<string, { stamp: string; value: SiteSettings }>()
 
 function file(docId: string, env: Record<string, string | undefined>): string {
   if (!/^[\w.-]+$/.test(docId)) throw new Error('invalid doc id')
@@ -288,15 +289,24 @@ function file(docId: string, env: Record<string, string | undefined>): string {
 
 export async function loadSettings(docId: string, env: Record<string, string | undefined> = process.env): Promise<SiteSettings> {
   const f = file(docId, env)
-  const hit = cache.get(f)
-  if (hit && hit.exp > Date.now()) return hit.value
-  let value: SiteSettings = {}
+  let stamp = 'missing'
   try {
-    value = JSON.parse(await readFile(f, 'utf-8')) as SiteSettings
+    const st = await stat(f)
+    stamp = `${st.ino}:${st.size}:${st.mtimeMs}`
   } catch {
     /* none set */
   }
-  cache.set(f, { exp: Date.now() + TTL_MS, value })
+  const hit = cache.get(f)
+  if (hit && hit.stamp === stamp) return hit.value
+  let value: SiteSettings = {}
+  if (stamp !== 'missing') {
+    try {
+      value = JSON.parse(await readFile(f, 'utf-8')) as SiteSettings
+    } catch {
+      /* unreadable: behave as unset */
+    }
+  }
+  cache.set(f, { stamp, value })
   return value
 }
 

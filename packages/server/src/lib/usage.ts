@@ -24,9 +24,15 @@ function file(docId: string, env: Record<string, string | undefined>): string {
   return join(resolve(env.DATA_DIR || './data'), '_usage', `${docId}.json`)
 }
 
-async function load(docId: string, env: Record<string, string | undefined>, now: Date): Promise<Usage> {
+async function load(
+  docId: string,
+  env: Record<string, string | undefined>,
+  now: Date,
+  fresh = false,
+): Promise<Usage> {
   const key = `${resolve(env.DATA_DIR || './data')}:${docId}`
-  let u = live.get(key)
+  // `fresh` re-reads the file: another process (the server) is the one counting.
+  let u = fresh ? undefined : live.get(key)
   if (!u) {
     try {
       u = JSON.parse(await readFile(file(docId, env), 'utf-8')) as Usage
@@ -42,8 +48,8 @@ async function load(docId: string, env: Record<string, string | undefined>, now:
   return u
 }
 
-export async function readUsage(docId: string, env = process.env, now = new Date()): Promise<Usage> {
-  return { ...(await load(docId, env, now)) }
+export async function readUsage(docId: string, env = process.env, now = new Date(), fresh = false): Promise<Usage> {
+  return { ...(await load(docId, env, now, fresh)) }
 }
 
 /**

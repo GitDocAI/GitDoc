@@ -3,7 +3,8 @@
 #   cp .env.example .env        # set PUBLISH_TOKEN
 #   docker compose up -d --build
 #
-# Then, from your docs folder:
+# Then open the admin panel at http://127.0.0.1:8081: it sets a password and
+# shows how to connect the CLI. Or, from your docs folder:
 #   gitdoc connect http://localhost:8080 --token <PUBLISH_TOKEN>
 #   gitdoc publish
 services:
@@ -15,6 +16,9 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-8080}:8080"
+      # The admin panel: only this machine can reach it. Use an SSH tunnel or
+      # your VPN to open it remotely; never publish it to the internet.
+      - "127.0.0.1:${ADMIN_PORT:-8081}:8081"
     environment:
       # Publishing is disabled unless this is set.
       PUBLISH_TOKEN: ${PUBLISH_TOKEN:?set PUBLISH_TOKEN in .env}
@@ -23,6 +27,10 @@ services:
       SINGLE_SITE: "true"
       LIST_SITES: "true"
       PUBLISH_MAX_MB: ${PUBLISH_MAX_MB:-200}
+      # Shown in the admin panel's connect commands (readers' address).
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      # Optional: skip the panel's first-run password step.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
 
       # --- AI (optional) ----------------------------------------------------
       # Any OpenAI-compatible endpoint: ThreatWinds, OpenAI, Ollama, vLLM...

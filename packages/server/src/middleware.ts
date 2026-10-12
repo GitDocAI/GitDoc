@@ -17,9 +17,6 @@ const API_ROUTES = new Set([
   '/api/mcp', // read-only MCP server; self-gates (401 JSON)
   '/api/publish', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/sites', // self-hosted only; authenticated by PUBLISH_TOKEN
-  '/api/reindex', // self-hosted only; authenticated by PUBLISH_TOKEN
-  '/api/settings', // self-hosted only; authenticated by PUBLISH_TOKEN
-  '/api/usage', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/auth/login',
   '/api/auth/password',
   '/api/auth/oidc/start',

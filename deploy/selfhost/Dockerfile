@@ -17,6 +17,8 @@ FROM node:22-bookworm-slim
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8080 \
+    ADMIN_HOST=0.0.0.0 \
+    ADMIN_PORT=8081 \
     DATA_DIR=/data \
     SINGLE_SITE=true \
     LIST_SITES=true \
@@ -28,9 +30,11 @@ COPY --from=build /src/engine/ ./
 RUN mkdir -p /data && chown node:node /data
 VOLUME /data
 USER node
-EXPOSE 8080
+# 8080: readers and the CLI.  8081: the admin panel; publish it only to a
+# private network or 127.0.0.1 (see docker-compose.yml).
+EXPOSE 8080 8081
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 \
   CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/login').then(()=>process.exit(0),()=>process.exit(1))"
 
-CMD ["node", "server/entry.mjs"]
+CMD ["node", "start.mjs"]

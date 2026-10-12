@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>GitDoc admin</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --panel: #fff; --text: #18181b; --muted: #6b7280; --line: #e4e4e7;
+    --accent: #2563eb; --accent-text: #fff; --danger: #b91c1c; --ok: #15803d; --warn: #b45309;
+    --code: #f4f4f5; color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e0e10; --panel: #17171a; --text: #ececf0; --muted: #9a9aa5; --line: #2a2a30;
+      --accent: #5b8cff; --accent-text: #0b0b0d; --danger: #f87171; --ok: #4ade80; --warn: #fbbf24; --code: #1f1f24; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; background: var(--panel);
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 650; }
+  header nav { display: flex; gap: 4px; flex: 1; }
+  header nav a { padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+  header nav a.on, header nav a:hover { color: var(--text); background: var(--code); }
+  main { max-width: 920px; margin: 0 auto; padding: 28px 24px 80px; }
+  h2 { font-size: 20px; margin: 0 0 4px; }
+  h3 { font-size: 14px; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 5px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-color: var(--accent); }
+  input[type=checkbox] { width: auto; }
+  button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .55; cursor: default; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--code); color: var(--muted); }
+  .chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); }
+  pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .cmd { display: flex; align-items: stretch; gap: 8px; margin: 8px 0 14px; }
+  .cmd pre { flex: 1; margin: 0; padding: 10px 12px; background: var(--code); border-radius: 8px; overflow-x: auto; white-space: pre; }
+  .msg { padding: 9px 12px; border-radius: 8px; margin: 12px 0; }
+  .msg.err { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  .msg.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+  .tabs a { padding: 8px 12px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; }
+  .tabs a.on { color: var(--text); border-color: var(--accent); }
+  .provider { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .muted { color: var(--muted); }
+  .center { max-width: 420px; margin: 8vh auto; }
+  a.site { display: block; color: inherit; text-decoration: none; }
+  a.site:hover .card { border-color: var(--accent); }
+  .steps { counter-reset: s; padding: 0; list-style: none; }
+  .steps li { counter-increment: s; padding-left: 34px; position: relative; margin-bottom: 18px; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-text); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+</style>
+</head>
+<body>
+<header id="top" hidden>
+  <h1>GitDoc admin</h1>
+  <nav>
+    <a href="#/sites" data-nav="sites">Sites</a>
+    <a href="#/connect" data-nav="connect">Connect</a>
+    <a href="#/instance" data-nav="instance">Server</a>
+  </nav>
+  <button id="logout">Sign out</button>
+</header>
+<main id="app"></main>
+
+<script>
+'use strict'
+// ---- tiny helpers (DOM is built with textContent: nothing is interpreted as HTML) ----
+const $ = (s, r = document) => r.querySelector(s)
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v)
+    else if (k === 'class') el.className = v
+    else if (k === 'value') el.value = v
+    else el.setAttribute(k, v === true ? '' : v)
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) el.append(k.nodeType ? k : document.createTextNode(String(k)))
+  return el
+}
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { 'content-type': 'application/json', 'x-gitdoc-admin': '1' },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 401 && !path.includes('/admin/api/login') && !path.includes('/admin/api/setup')) { state.authenticated = false; route() }
+  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`)
+  return data
+}
+const state = { needsSetup: false, authenticated: false }
+const app = $('#app')
+const notice = (kind, text) => h('div', { class: 'msg ' + kind, role: 'status' }, text)
+const copyBtn = (getText) => h('button', { onclick: async (e) => {
+  try { await navigator.clipboard.writeText(await getText()); e.target.textContent = 'Copied'; setTimeout(() => (e.target.textContent = 'Copy'), 1500) }
+  catch { e.target.textContent = 'Select and copy' }
+} }, 'Copy')
+const cmd = (text, getText) => h('div', { class: 'cmd' }, h('pre', {}, text), copyBtn(getText || (() => text)))
+
+// ---- view: setup + login ----
+function viewSetup() {
+  const err = h('div'); let busy = false
+  const token = h('input', { type: 'password', autocomplete: 'off', placeholder: 'the PUBLISH_TOKEN from your .env' })
+  const pw = h('input', { type: 'password', autocomplete: 'new-password', placeholder: 'at least 10 characters' })
+  const go = async (e) => {
+    e.preventDefault(); if (busy) return; busy = true; err.replaceChildren()
+    try { await api('/admin/api/setup', { method: 'POST', body: { token: token.value, password: pw.value } })
+      state.needsSetup = false; state.authenticated = true; location.hash = '#/connect'; route() }
+    catch (x) { err.replaceChildren(notice('err', x.message)) }
+    busy = false
+  }
+  return h('div', { class: 'center' },
+    h('h2', {}, 'Welcome to GitDoc'),
+    h('p', { class: 'sub' }, 'Set up this server in a minute. First, create the password for this admin panel.'),
+    h('form', { class: 'card', onsubmit: go },
+      h('label', {}, 'Server token'), token,
+      h('p', { class: 'muted' }, 'Proves you control this server. It is the PUBLISH_TOKEN you set when you started it.'),
+      h('label', {}, 'Admin password'), pw, err,
+      h('div', { class: 'row', style: 'margin-top:16px' }, h('button', { class: 'primary', type: 'submit' }, 'Continue'))))
+}
+function viewLogin() {
+  const err = h('div'); const pw = h('input', { type: 'password', autocomplete: 'current-password', autofocus: true })
+  const go = async (e) => { e.preventDefault(); err.replaceChildren()
+    try { await api('/admin/api/login', { method: 'POST', body: { password: pw.value } }); state.authenticated = true; route() }
+    catch (x) { err.replaceChildren(notice('err', x.message)) } }
+  return h('div', { class: 'center' }, h('h2', {}, 'Sign in'), h('p', { class: 'sub' }, 'GitDoc admin'),
+    h('form', { class: 'card', onsubmit: go }, h('label', {}, 'Password'), pw, err,
+      h('div', { style: 'margin-top:16px' }, h('button', { class: 'primary', type: 'submit' }, 'Sign in'))))
+}
+
+// ---- view: connect (the onboarding commands) ----
+const savedUrl = () => localStorage.getItem('gitdoc.publicUrl') || state.publicUrl || `${location.protocol}//${location.hostname}:8080`
+async function viewConnect(host) {
+  const url = h('input', { value: savedUrl(), placeholder: 'https://docs.example.com' })
+  const tokenBox = h('code', {}, '••••••••••••••••')
+  let token = null, shown = false
+  const getToken = async () => token ?? (token = (await api('/admin/api/token')).token)
+  const cmds = h('div')
+  const draw = async (reveal) => {
+    const base = url.value.trim().replace(/\/+$/, '')
+    localStorage.setItem('gitdoc.publicUrl', base)
+    const t = await getToken()
+    const shownTok = reveal ? t : '<your PUBLISH_TOKEN>'
+    cmds.replaceChildren(
+      h('ol', { class: 'steps' },
+        h('li', {}, h('h3', {}, 'Install the CLI'), cmd('npm install -g gitdoc-cli')),
+        h('li', {}, h('h3', {}, 'Connect it to this server'),
+          h('p', { class: 'muted' }, 'The token is saved in your user config, never in the project.'),
+          cmd(`gitdoc connect ${base} --token ${shownTok}`, () => `gitdoc connect ${base} --token ${t}`),
+          h('div', { class: 'row' }, h('button', { onclick: () => { shown = !shown; draw(shown) } }, shown ? 'Hide token' : 'Show token'))),
+        h('li', {}, h('h3', {}, 'Create your docs and publish'),
+          cmd('gitdoc init my-docs --name "My Docs"\ngitdoc dev my-docs        # live preview\ngitdoc publish my-docs    # send it to this server')),
+        h('li', {}, h('h3', {}, 'Let your AI assistant write them'),
+          h('p', { class: 'muted' }, 'Installs a skill so Claude Code (and others, via AGENTS.md) knows the format and how to publish. You edit by chatting; this panel is only for administration.'),
+          cmd('gitdoc setup')),
+        h('li', {}, h('h3', {}, 'Optional: give agents read access to the published docs'),
+          cmd(`claude mcp add --transport http docs ${host ? 'https://' + host : base}/api/mcp`))))
+  }
+  url.addEventListener('change', () => draw(shown))
+  await draw(false)
+  return h('div', {},
+    h('h2', {}, 'Connect'), h('p', { class: 'sub' }, 'Everything you need to start publishing to this server.'),
+    h('div', { class: 'card' }, h('label', {}, 'Public address of this server'), url,
+      h('p', { class: 'muted' }, 'Where readers and the CLI reach it (the port or domain that points to the docs, not this admin port).')),
+    h('div', { class: 'card' }, cmds))
+}
+
+// ---- view: instance ----
+async function viewInstance() {
+  const i = await api('/admin/api/instance')
+  const row = (k, v, kind) => h('div', { class: 'row', style: 'padding:6px 0;border-bottom:1px solid var(--line)' },
+    h('div', { class: 'grow' }, k), h('span', { class: 'chip ' + (kind || '') }, v))
+  const pw = { cur: h('input', { type: 'password', autocomplete: 'current-password' }), nw: h('input', { type: 'password', autocomplete: 'new-password' }) }
+  const out = h('div')
+  return h('div', {}, h('h2', {}, 'Server'), h('p', { class: 'sub' }, 'What this installation is configured with. Secrets are never shown.'),
+    h('div', { class: 'card' },
+      row('Publishing', i.publishEnabled ? 'enabled' : 'disabled: set PUBLISH_TOKEN', i.publishEnabled ? 'ok' : 'warn'),
+      row('Search', i.search.error ? 'misconfigured: ' + i.search.error : i.search.backend + (i.search.opensearchHost ? ' @ ' + i.search.opensearchHost : ''), i.search.error ? 'warn' : 'ok'),
+      row('Meaning-based search (embeddings)', i.ai.embeddingModel ? i.ai.embeddingModel : 'off: set AI_URL and AI_EMBEDDING_MODEL', i.ai.embeddingModel ? 'ok' : ''),
+      row('Assistant (Ask)', i.ai.chatModel ? i.ai.chatModel + ' @ ' + i.ai.host : 'off: set AI_URL and AI_CHAT_MODEL', i.ai.chatModel ? 'ok' : ''),
+      row('Analytics events', i.events),
+      row('Behind a trusted proxy', i.trustProxy ? 'yes' : 'no (set TRUST_PROXY=true behind a CDN)')),
+    h('div', { class: 'card' }, h('h3', {}, 'Change the admin password'),
+      h('label', {}, 'Current'), pw.cur, h('label', {}, 'New'), pw.nw, out,
+      h('div', { style: 'margin-top:14px' }, h('button', { onclick: async () => { out.replaceChildren()
+        try { await api('/admin/api/password', { method: 'POST', body: { current: pw.cur.value, password: pw.nw.value } })
+          pw.cur.value = pw.nw.value = ''; out.append(notice('ok', 'Password changed.')) }
+        catch (x) { out.append(notice('err', x.message)) } } }, 'Change password'))))
+}
+
+// ---- view: sites ----
+async function viewSites() {
+  const { sites } = await api('/api/sites')
+  if (!sites.length) {
+    return h('div', {}, h('h2', {}, 'Sites'),
+      h('div', { class: 'card' }, h('h3', {}, 'Nothing published yet'),
+        h('p', { class: 'muted' }, 'Publish a documentation from your computer and it will appear here.'),
+        h('a', { href: '#/connect' }, 'Show me how to connect')))
+  }
+  return h('div', {}, h('h2', {}, 'Sites'), h('p', { class: 'sub' }, `${sites.length} documentation${sites.length > 1 ? 's' : ''} on this server.`),
+    sites.map((s) => h('a', { class: 'site', href: '#/site/' + encodeURIComponent(s.hostname) },
+      h('div', { class: 'card row' },
+        h('div', { class: 'grow' }, h('h3', { style: 'margin:0' }, s.name || s.hostname), h('div', { class: 'muted' }, s.hostname + ' · ' + s.pages + ' pages')),
+        h('span', { class: 'chip ' + (s.private ? 'warn' : 'ok') }, s.private ? 'private' : 'public'),
+        h('span', { class: 'chip' }, 'search: ' + s.search.backend + (s.search.vectors ? ' + vectors' : ''))))))
+}
+
+// ---- view: one site ----
+const callback = (host) => `${/(^|\.)localhost$|^127\.|^\d+\.\d+\.\d+\.\d+$/.test(host) ? 'http' : 'https'}://${host}/api/auth/oidc/callback`
+async function viewSite(host, tab) {
+  const [{ sites }, cfg] = await Promise.all([api('/api/sites'), api('/api/settings?hostname=' + encodeURIComponent(host))])
+  const site = sites.find((s) => s.hostname === host)
+  if (!site) return h('div', {}, notice('err', 'This site is not published (any more).'), h('a', { href: '#/sites' }, 'Back to sites'))
+  const base = '#/site/' + encodeURIComponent(host)
+  const tabs = h('div', { class: 'tabs' }, [['overview', 'Overview'], ['access', 'Access'], ['quotas', 'Quotas'], ['connect', 'Connect']]
+    .map(([k, t]) => h('a', { href: base + '/' + k, class: tab === k ? 'on' : '' }, t)))
+  const head = h('div', {}, h('p', {}, h('a', { href: '#/sites' }, '← Sites')), h('h2', {}, site.name || host), h('p', { class: 'sub' }, host), tabs)
+  const save = async (settings, out, after) => {
+    out.replaceChildren()
+    try { await api('/api/settings?hostname=' + encodeURIComponent(host), { method: 'PUT', body: settings })
+      out.append(notice('ok', 'Saved. It applies within a few seconds.')); if (after) after() }
+    catch (x) { out.append(notice('err', x.message)) }
+  }
+
+  if (tab === 'access') {
+    const a = cfg.settings.auth || {}
+    let enabled = !!a.enabled
+    const providers = (a.providers || []).map((p) => ({ ...p }))
+    const allow = a.allow || {}
+    const out = h('div')
+    const list = h('div')
+    const f = (obj, key, label, type, ph) => h('div', {}, h('label', {}, label),
+      h('input', { type: type || 'text', value: obj[key] ?? '', placeholder: ph || '', autocomplete: 'off', oninput: (e) => (obj[key] = e.target.value) }))
+    const drawProviders = () => {
+      list.replaceChildren(...providers.map((p, i) => h('div', { class: 'provider' },
+        h('div', { class: 'row' }, h('strong', { class: 'grow' }, { password: 'Shared password', oidc: 'OpenID Connect (Okta, Entra, Auth0, Google…)', gitdocai: 'GitDocAI account (IAM)' }[p.type]),
+          h('button', { class: 'danger', onclick: () => { providers.splice(i, 1); drawProviders() } }, 'Remove')),
+        f(p, 'name', 'Button label', 'text', p.type === 'password' ? 'Team password' : p.type === 'oidc' ? 'Okta' : 'GitDocAI'),
+        p.type === 'password' && f(p, 'password', p.password === '***' ? 'Password (leave as is to keep it)' : 'Password', 'password', 'at least 8 characters'),
+        p.type === 'oidc' && [f(p, 'issuer', 'Issuer URL', 'url', 'https://acme.okta.com'), f(p, 'client_id', 'Client ID'),
+          f(p, 'client_secret', p.client_secret === '***' ? 'Client secret (leave as is to keep it)' : 'Client secret', 'password'),
+          h('p', { class: 'muted' }, 'Register this redirect URI at your provider: ', h('code', {}, callback(host)))],
+        p.type === 'gitdocai' && [f(p, 'iam_url', 'IAM URL', 'url', 'https://iam.example.com'), f(p, 'issuer', 'Token issuer (optional)')])))
+    }
+    const add = (type) => { const n = providers.filter((p) => p.type === type).length + 1
+      providers.push({ id: n > 1 ? `${type}-${n}` : type, type, name: '' }); drawProviders() }
+    drawProviders()
+    const csv = (k) => h('input', { value: (allow[k] || []).join(', '), placeholder: k === 'email_domains' ? 'acme.com' : k === 'emails' ? 'ana@example.org' : 'docs-readers', 'data-k': k })
+    const fields = { email_domains: csv('email_domains'), emails: csv('emails'), groups: csv('groups') }
+    const hours = h('input', { type: 'number', min: '1', value: a.session_hours || 24 })
+    const toggle = h('input', { type: 'checkbox', checked: enabled, onchange: (e) => (enabled = e.target.checked) })
+    return h('div', {}, head,
+      h('div', { class: 'card' },
+        h('label', { class: 'row', style: 'font-size:14px;color:var(--text)' }, toggle, 'Require readers to sign in (private documentation)'),
+        h('p', { class: 'muted' }, 'Each provider you add becomes an option on the login page. This applies to pages, search, the assistant and MCP.')),
+      h('div', { class: 'card' }, h('h3', {}, 'Sign-in methods'), list,
+        h('div', { class: 'row' }, h('button', { onclick: () => add('password') }, '+ Shared password'),
+          h('button', { onclick: () => add('oidc') }, '+ OpenID Connect'), h('button', { onclick: () => add('gitdocai') }, '+ GitDocAI account'))),
+      h('div', { class: 'card' }, h('h3', {}, 'Who may read'),
+        h('p', { class: 'muted' }, 'For OpenID Connect and GitDocAI sign-ins. Leave all empty to admit anyone the provider vouches for. A match on any one is enough.'),
+        h('label', {}, 'Email domains (comma separated)'), fields.email_domains,
+        h('label', {}, 'Individual emails'), fields.emails,
+        h('label', {}, 'Groups (from the provider’s groups claim)'), fields.groups,
+        h('label', {}, 'Session length (hours)'), hours),
+      out,
+      h('button', { class: 'primary', onclick: () => {
+        const split = (el) => el.value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean)
+        const clean = providers.map((p) => { const q = { ...p }; for (const k of Object.keys(q)) if (q[k] === '') delete q[k]; return q })
+        save({ ...cfg.settings, auth: { enabled, providers: clean,
+          allow: { email_domains: split(fields.email_domains), emails: split(fields.emails), groups: split(fields.groups) },
+          session_hours: Number(hours.value) || 24 } }, out) } }, 'Save access settings'))
+  }
+
+  if (tab === 'quotas') {
+    const q = cfg.settings.quota || {}, eff = cfg.effective.quota
+    const items = [['ask_per_day', 'Assistant questions per day', 'whole documentation'], ['ask_per_month', 'Assistant questions per month', 'whole documentation'],
+      ['ask_per_min_per_visitor', 'Assistant questions per minute', 'per visitor'], ['search_per_min_per_visitor', 'Searches per minute', 'per visitor']]
+    const ctl = {}; const out = h('div')
+    const rows = items.map(([k, label, scope]) => {
+      const mode = h('select', {}, h('option', { value: 'default' }, `Server default (${eff[k] === null ? 'no limit' : eff[k]})`),
+        h('option', { value: 'unlimited' }, 'No limit'), h('option', { value: 'custom' }, 'Custom'))
+      const num = h('input', { type: 'number', min: '0', style: 'margin-top:6px' })
+      const cur = k in q ? (q[k] === null ? 'unlimited' : 'custom') : 'default'
+      mode.value = cur; if (cur === 'custom') num.value = q[k]
+      const sync = () => (num.hidden = mode.value !== 'custom'); mode.addEventListener('change', sync); sync()
+      ctl[k] = { mode, num }
+      return h('div', {}, h('label', {}, `${label} · ${scope}`), mode, num)
+    })
+    const u = site.usage
+    return h('div', {}, head,
+      h('div', { class: 'grid', style: 'margin-bottom:16px' },
+        h('div', { class: 'stat' }, h('b', {}, String(u.ask_today)), h('span', {}, 'questions today (UTC)')),
+        h('div', { class: 'stat' }, h('b', {}, String(u.ask_this_month)), h('span', {}, 'questions this month'))),
+      h('div', { class: 'card' }, rows, h('p', { class: 'muted' }, '0 closes the assistant. Limits apply within a few seconds, without a restart.')),
+      out, h('button', { class: 'primary', onclick: () => {
+        const quota = {}
+        for (const [k] of items) { const { mode, num } = ctl[k]
+          if (mode.value === 'unlimited') quota[k] = null
+          else if (mode.value === 'custom') quota[k] = num.value === '' ? 0 : Number(num.value) }
+        save({ ...cfg.settings, quota }, out) } }, 'Save quotas'))
+  }
+
+  if (tab === 'connect') {
+    const url = savedUrl().replace(/\/+$/, '')
+    return h('div', {}, head, h('div', { class: 'card' },
+      h('h3', {}, 'Publish to this site'), cmd(`gitdoc publish my-docs --hostname ${host}`),
+      h('h3', {}, 'Readers and agents'), cmd(`${/localhost/.test(host) ? 'http' : 'https'}://${host}/`),
+      cmd(`claude mcp add --transport http docs ${/localhost/.test(host) ? 'http' : 'https'}://${host}/api/mcp`),
+      h('p', { class: 'muted' }, 'Markdown for any page: add .md to its URL. A site map for models is at /llms.txt.'),
+      h('p', {}, h('a', { href: '#/connect' }, 'Connect a new computer (CLI install and token)'))))
+  }
+
+  // overview
+  const out = h('div'); const s = site
+  return h('div', {}, head,
+    h('div', { class: 'grid', style: 'margin-bottom:16px' },
+      h('div', { class: 'stat' }, h('b', {}, String(s.pages)), h('span', {}, 'published pages')),
+      h('div', { class: 'stat' }, h('b', {}, s.private ? 'Private' : 'Public'), h('span', {}, s.auth.providers.length ? 'sign-in: ' + s.auth.providers.join(', ') : 'no sign-in configured')),
+      h('div', { class: 'stat' }, h('b', {}, s.search.backend), h('span', {}, s.search.backend === 'embedded'
+        ? `${s.search.indexed} pages indexed${s.search.vectors ? ' · vectors' + (s.search.model ? ' (' + s.search.model + ')' : '') : ' · text only'}` : 'indexed in OpenSearch'))),
+    h('div', { class: 'card' }, h('h3', {}, 'Search index'),
+      h('p', { class: 'muted' }, 'The index is rebuilt every time you publish. Rebuild it by hand if you changed the embeddings model or the search backend.'),
+      out, h('button', { onclick: async (e) => { e.target.disabled = true; out.replaceChildren()
+        try { const r = await api('/api/reindex?hostname=' + encodeURIComponent(host), { method: 'POST' })
+          const x = r.sites[host]; out.append(notice('ok', `Indexed ${x.indexed} pages${x.semantic ? ' with vectors' : ''}${x.warning ? ' — ' + x.warning : ''}.`)) }
+        catch (x) { out.append(notice('err', x.message)) }
+        e.target.disabled = false } }, 'Rebuild search index')))
+}
+
+// ---- router ----
+async function route() {
+  const top = $('#top')
+  if (state.needsSetup) { top.hidden = true; return app.replaceChildren(viewSetup()) }
+  if (!state.authenticated) { top.hidden = true; return app.replaceChildren(viewLogin()) }
+  top.hidden = false
+  const [, page = 'sites', a, b] = location.hash.replace(/^#/, '').split('/')
+  for (const n of document.querySelectorAll('[data-nav]')) n.classList.toggle('on', n.dataset.nav === (page === 'site' ? 'sites' : page))
+  try {
+    const view = page === 'connect' ? await viewConnect()
+      : page === 'instance' ? await viewInstance()
+      : page === 'site' ? await viewSite(decodeURIComponent(a || ''), b || 'overview')
+      : await viewSites()
+    app.replaceChildren(view)
+  } catch (e) { app.replaceChildren(notice('err', e.message)) }
+}
+window.addEventListener('hashchange', route)
+$('#logout').addEventListener('click', async () => { await api('/admin/api/logout', { method: 'POST' }).catch(() => {}); state.authenticated = false; route() })
+;(async () => {
+  Object.assign(state, await fetch('/admin/api/state').then((r) => r.json()))
+  if (state.publicUrl && !localStorage.getItem('gitdoc.publicUrl')) localStorage.setItem('gitdoc.publicUrl', state.publicUrl)
+  route()
+})()
+</script>
+</body>
+</html>

@@ -98,6 +98,9 @@ npm test        # starts the real server and publishes through its HTTP API
 | `AI_EMBEDDING_MODEL` | Turns on meaning-based search. |
 | `AI_CHAT_MODEL` | Turns on Ask. |
 | `AI_MAX_ANSWER_TOKENS` | Answer length cap (default 800). |
+| `ADMIN_PORT`, `ADMIN_HOST` | Admin panel address (default `8081` on `127.0.0.1`; the image listens on `0.0.0.0` inside the container). `ADMIN_ENABLED=false` turns it off. |
+| `ADMIN_PASSWORD` | Preset the panel password and skip onboarding. |
+| `PUBLIC_URL` | Prefills the address shown in the panel's connect commands. |
 | `SEARCH_MIN_SIMILARITY` | Passages less similar than this are ignored (default 0.3). |
 | `SEARCH_BACKEND` | `embedded` or `opensearch`. Default: `opensearch` if `OPENSEARCH_URL` is set. |
 | `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD`, `OPENSEARCH_INSECURE` | Use OpenSearch instead of the built-in index. |
@@ -117,21 +120,35 @@ Add another engine by implementing `SearchBackend` (`packages/server/src/lib/sea
 
 With a hosted model, the passages used to answer a question leave your server. For private documentation, use a model you host.
 
+## The admin panel
+
+A second port, **8081**, serves an administration panel and the operator API. It is separate from the port readers use, and bound to `127.0.0.1` (compose publishes it only on the host's loopback), so by default it is not reachable from the network. Open `http://127.0.0.1:8081`:
+
+1. **First run:** it asks for an admin password, proving you control the server with the `PUBLISH_TOKEN`. (`ADMIN_PASSWORD` in the environment skips this step for automated installs.)
+2. **Connect:** copy-paste commands to install the CLI, connect it to this server, publish, install the AI skill and add the MCP server.
+3. **Sites:** each documentation, with its search status and usage. Per site: **Access** (sign-in providers and who may read), **Quotas**, rebuild the search index, and the commands to publish or connect an agent.
+4. **Server:** what this installation is configured with (AI, search backend, events). Secrets are never shown.
+
+The panel is for administration only. Content is files: you edit it with your editor or your AI assistant, and publish with the CLI.
+
+To reach the panel from another machine, use an SSH tunnel (`ssh -L 8081:127.0.0.1:8081 server`) or put it behind your VPN or an authenticating reverse proxy. Do not publish it on the internet.
+
 ## Per-site settings
 
-Some things are not for the docs author and not for the environment: they belong to whoever **operates** the server, and they change while it runs. Those are *site settings*, stored in the data volume (`_settings/`), never inside the docs repo, and changed through the admin API with the same `PUBLISH_TOKEN`:
+Some things are not for the docs author and not for the environment: they belong to whoever **operates** the server, and they change while it runs. Those are *site settings*, stored in the data volume (`_settings/`), never inside the docs repo. The admin panel edits them; automation (a control plane, a script) uses the same API on the admin port with `Authorization: Bearer $PUBLISH_TOKEN`:
 
 ```bash
+ADMIN=http://127.0.0.1:8081
 # what a site has set, and what is in force (its own values over the instance defaults)
-curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$URL/api/settings?hostname=docs.acme.com"
+curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$ADMIN/api/settings?hostname=docs.acme.com"
 
 # 200 questions a day, 3000 a month, 5 per visitor per minute; null = no limit, 0 = closed
 curl -X PUT -H "Authorization: Bearer $PUBLISH_TOKEN" -H "Content-Type: application/json" \
   -d '{"quota": {"ask_per_day": 200, "ask_per_month": 3000, "ask_per_min_per_visitor": 5}}' \
-  "$URL/api/settings?hostname=docs.acme.com"
+  "$ADMIN/api/settings?hostname=docs.acme.com"
 
 # what it has consumed
-curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$URL/api/usage?hostname=docs.acme.com"
+curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$ADMIN/api/usage?hostname=docs.acme.com"
 ```
 
 | Quota | Meaning | Default |
@@ -149,7 +166,7 @@ A site becomes private when its operator turns sign-in on. Like quotas, this is 
 
 ```bash
 curl -X PUT -H "Authorization: Bearer $PUBLISH_TOKEN" -H "Content-Type: application/json" \
-  "$URL/api/settings?hostname=docs.acme.com" -d '{
+  "$ADMIN/api/settings?hostname=docs.acme.com" -d '{
   "auth": {
     "enabled": true,
     "providers": [
@@ -177,7 +194,7 @@ Secrets are write-only: reading the settings shows `***`, and sending `***` (or 
 
 The server sends `Cache-Control: public, max-age=60, stale-while-revalidate=600` for public pages and `private, no-store` for private ones, so a CDN in front (Cloudflare, for instance, with a cache rule that respects origin headers) serves most traffic. Set `TRUST_PROXY=true` so rate limits count real visitors and the country in analytics comes from `CF-IPCountry`. Do not set it when the server is reachable without the proxy: those headers can then be forged.
 
-`POST /api/reindex[?hostname=…]` (Bearer `PUBLISH_TOKEN`) rebuilds the search index from the files already on disk and drops the caches. It is for setups where another process writes the site into the data volume instead of calling `/api/publish`.
+`POST /api/reindex[?hostname=…]` on the admin port (Bearer `PUBLISH_TOKEN`) rebuilds the search index from the files already on disk and drops the caches. It is for setups where another process writes the site into the data volume instead of calling `/api/publish`.
 
 ## Known limitations
 
