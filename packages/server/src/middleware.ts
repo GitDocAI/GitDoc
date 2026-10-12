@@ -16,6 +16,8 @@ const API_ROUTES = new Set([
   '/api/publish', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/sites', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/reindex', // self-hosted only; authenticated by PUBLISH_TOKEN
+  '/api/settings', // self-hosted only; authenticated by PUBLISH_TOKEN
+  '/api/usage', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/auth/login',
   '/api/auth/switch',
   '/api/auth/handoff',

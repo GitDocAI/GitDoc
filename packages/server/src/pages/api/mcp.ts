@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro'
 import { canAccessDoc } from '../../lib/auth'
 import { ContentSource } from '../../lib/contentSource'
-import { clientKey, envInt, hit, tooMany } from '../../lib/rateLimit'
+import { clientKey, hit, tooMany } from '../../lib/rateLimit'
+import { effectiveQuota } from '../../lib/settings'
 import { searchBackend, type SearchDoc } from '../../lib/search'
 
 export const prerender = false
@@ -65,7 +66,8 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     if (!locals.session) return reply({ error: 'unauthorized' }, 401)
     if (!canAccessDoc(locals.session, mapping)) return reply({ error: 'forbidden' }, 403)
   }
-  const verdict = hit(`mcp:${clientKey(request, clientAddress)}`, envInt('RATE_SEARCH_PER_MIN', 120), 60_000)
+  const quota = await effectiveQuota(mapping.docId)
+  const verdict = hit(`mcp:${mapping.docId}:${clientKey(request, clientAddress)}`, quota.search_per_min_per_visitor, 60_000)
   if (!verdict.ok) return tooMany(verdict)
 
   let msg: { id?: unknown; method?: string; params?: any }

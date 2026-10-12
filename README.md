@@ -117,6 +117,32 @@ Add another engine by implementing `SearchBackend` (`packages/server/src/lib/sea
 
 With a hosted model, the passages used to answer a question leave your server. For private documentation, use a model you host.
 
+## Per-site settings
+
+Some things are not for the docs author and not for the environment: they belong to whoever **operates** the server, and they change while it runs. Those are *site settings*, stored in the data volume (`_settings/`), never inside the docs repo, and changed through the admin API with the same `PUBLISH_TOKEN`:
+
+```bash
+# what a site has set, and what is in force (its own values over the instance defaults)
+curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$URL/api/settings?hostname=docs.acme.com"
+
+# 200 questions a day, 3000 a month, 5 per visitor per minute; null = no limit, 0 = closed
+curl -X PUT -H "Authorization: Bearer $PUBLISH_TOKEN" -H "Content-Type: application/json" \
+  -d '{"quota": {"ask_per_day": 200, "ask_per_month": 3000, "ask_per_min_per_visitor": 5}}' \
+  "$URL/api/settings?hostname=docs.acme.com"
+
+# what it has consumed
+curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$URL/api/usage?hostname=docs.acme.com"
+```
+
+| Quota | Meaning | Default |
+|---|---|---|
+| `ask_per_day` | Questions to the assistant per documentation per day (UTC) | `ASK_DAILY_LIMIT`, 1000 |
+| `ask_per_month` | Same, per calendar month | `ASK_MONTHLY_LIMIT`, none |
+| `ask_per_min_per_visitor` | Questions per visitor per minute | `RATE_ASK_PER_MIN`, 10 |
+| `search_per_min_per_visitor` | Searches (and MCP calls) per visitor per minute | `RATE_SEARCH_PER_MIN`, 120 |
+
+A change applies within seconds, without a restart. When the allowance is spent, `/api/ask` answers `429` with `{"code": "quota_exceeded", "limit", "period"}`. Counters survive restarts. A hosted control plane uses this same API to apply a plan's limits and to read usage for billing: the engine never calls a billing service per request.
+
 ## Behind a CDN
 
 The server sends `Cache-Control: public, max-age=60, stale-while-revalidate=600` for public pages and `private, no-store` for private ones, so a CDN in front (Cloudflare, for instance, with a cache rule that respects origin headers) serves most traffic. Set `TRUST_PROXY=true` so rate limits count real visitors and the country in analytics comes from `CF-IPCountry`. Do not set it when the server is reachable without the proxy: those headers can then be forged.

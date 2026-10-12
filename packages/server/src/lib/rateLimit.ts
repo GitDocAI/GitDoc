@@ -3,9 +3,8 @@
  * are not shared between replicas: they exist to stop a visitor (or a bug)
  * from running up the AI bill, not to be an exact quota.
  *
- *   RATE_SEARCH_PER_MIN   per client, default 120
- *   RATE_ASK_PER_MIN      per client, default 10
- *   ASK_DAILY_LIMIT       questions per documentation per day, default 1000 (0 = off)
+ * The numbers come from the site's settings (lib/settings.ts), over instance
+ * defaults from RATE_SEARCH_PER_MIN, RATE_ASK_PER_MIN and ASK_DAILY_LIMIT.
  *   TRUST_PROXY=true      take the client from CF-Connecting-IP / X-Forwarded-For
  */
 
@@ -21,8 +20,10 @@ export interface Verdict {
   retryAfter: number
 }
 
-export function hit(key: string, max: number, windowMs: number, now = Date.now()): Verdict {
-  if (max <= 0) return { ok: true, retryAfter: 0 }
+/** `max` null = unlimited; 0 = nothing is allowed. */
+export function hit(key: string, max: number | null, windowMs: number, now = Date.now()): Verdict {
+  if (max === null) return { ok: true, retryAfter: 0 }
+  if (max <= 0) return { ok: false, retryAfter: Math.ceil(windowMs / 1000) }
   if (windows.size > MAX_KEYS) {
     for (const [k, w] of windows) if (w.reset <= now) windows.delete(k)
     if (windows.size > MAX_KEYS) windows.clear() // under attack: forget, don't grow

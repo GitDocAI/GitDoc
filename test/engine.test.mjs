@@ -627,3 +627,80 @@ test('geo: the visitor country comes from the edge header, only behind a trusted
     assert.equal(view.country, expected)
   }
 })
+
+// ------------------------------------------------- per-site settings/quota ---
+
+const admin = { authorization: `Bearer ${TOKEN}` }
+const putSettings = (port, host, body) =>
+  http(port, `/api/settings?hostname=${host}`, {
+    method: 'PUT',
+    headers: { ...admin, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+test('settings: quotas are per site, set at runtime by the operator, and persist', async () => {
+  const ai = await fakeAI()
+  const s = await startServer({ env: { AI_URL: ai.url, AI_CHAT_MODEL: 'c' } })
+  await publish(s.port, makeSite({ name: 'Quota A', pages: DOCS }), 'qa.localhost')
+  await publish(s.port, makeSite({ name: 'Quota B', pages: DOCS }), 'qb.localhost')
+  const ask = (host) => post(s.port, host, '/api/ask', { question: 'docker?' })
+
+  // Needs the token, validates its input, and rejects what it does not know.
+  assert.equal((await http(s.port, '/api/settings?hostname=qa.localhost')).status, 401)
+  assert.equal((await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: 'many' } })).status, 400)
+  assert.equal((await putSettings(s.port, 'qa.localhost', { quota: { ask_pr_day: 1 } })).status, 400)
+  assert.equal((await putSettings(s.port, 'qa.localhost', { auth: {} })).status, 400)
+  assert.equal((await putSettings(s.port, 'nope.localhost', { quota: {} })).status, 404)
+
+  // Site A gets 2 questions a day; site B keeps the instance default.
+  const set = await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: 2 } })
+  assert.equal(set.status, 200, set.text)
+  assert.equal(JSON.parse(set.text).effective.quota.ask_per_day, 2)
+  assert.equal((await ask('qa.localhost')).status, 200)
+  assert.equal((await ask('qa.localhost')).status, 200)
+  const over = await ask('qa.localhost')
+  assert.equal(over.status, 429)
+  assert.equal(over.json.code, 'quota_exceeded')
+  assert.equal(over.json.limit, 2)
+  assert.equal(over.json.period, 'day')
+  assert.equal((await ask('qb.localhost')).status, 200, 'another site is unaffected')
+
+  // Usage is readable by the operator.
+  const used = JSON.parse((await http(s.port, '/api/usage?hostname=qa.localhost', { headers: admin })).text)
+  assert.equal(used.ask_today, 2)
+
+  // Raising the limit takes effect at once, with no restart.
+  await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: 5 } })
+  await new Promise((r) => setTimeout(r, 50))
+  assert.equal((await ask('qa.localhost')).status, 200)
+
+  // null lifts the cap; 0 closes the assistant.
+  await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: null, ask_per_min_per_visitor: null } })
+  for (let i = 0; i < 3; i++) assert.equal((await ask('qa.localhost')).status, 200)
+  await putSettings(s.port, 'qa.localhost', { quota: { ask_per_day: 0 } })
+  assert.equal((await ask('qa.localhost')).status, 429)
+
+  const read = JSON.parse((await http(s.port, '/api/settings?hostname=qa.localhost', { headers: admin })).text)
+  assert.deepEqual(read.settings, { quota: { ask_per_day: 0 } })
+})
+
+test('settings: the monthly cap, per-visitor rates, and counters survive a restart', async () => {
+  const ai = await fakeAI()
+  const first = await startServer({ env: { AI_URL: ai.url, AI_CHAT_MODEL: 'c' } })
+  await publish(first.port, makeSite({ name: 'Persist', pages: DOCS }), 'per.localhost')
+  await putSettings(first.port, 'per.localhost', { quota: { ask_per_month: 1, search_per_min_per_visitor: 2 } })
+  assert.equal((await post(first.port, 'per.localhost', '/api/ask', { question: 'docker?' })).status, 200)
+  const month = await post(first.port, 'per.localhost', '/api/ask', { question: 'docker?' })
+  assert.equal(month.status, 429)
+  assert.equal(month.json.period, 'month')
+
+  assert.equal((await search(first.port, 'per.localhost', 'docker')).status, 200)
+  assert.equal((await search(first.port, 'per.localhost', 'docker')).status, 200)
+  assert.equal((await http(first.port, '/api/search', { host: 'per.localhost', method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"query":"docker"}' })).status, 429)
+  first.stop()
+
+  // A new process over the same data directory still knows the settings and usage.
+  const again = await startServer({ env: { AI_URL: ai.url, AI_CHAT_MODEL: 'c', DATA_DIR: first.data } })
+  const after = await post(again.port, 'per.localhost', '/api/ask', { question: 'docker?' })
+  assert.equal(after.status, 429, JSON.stringify(after.json))
+})

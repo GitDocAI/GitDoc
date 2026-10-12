@@ -4,6 +4,8 @@ import { canAccessDoc } from '../../lib/auth'
 import { ContentSource } from '../../lib/contentSource'
 import { emitEvent } from '../../lib/events'
 import { clientKey, envInt, hit, tooMany } from '../../lib/rateLimit'
+import { effectiveQuota } from '../../lib/settings'
+import { takeAsk } from '../../lib/usage'
 import { searchBackend, type Passage } from '../../lib/search'
 
 export const prerender = false
@@ -58,11 +60,27 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
   const chat = aiFromEnv()?.chat
   if (!chat) return json({ error: 'assistant not configured' }, 404)
 
+  // Limits are the site's own (set by its operator at runtime), over the
+  // instance defaults. See lib/settings.ts.
+  const quota = await effectiveQuota(mapping.docId)
   const who = clientKey(request, clientAddress)
-  const perMin = hit(`ask:${who}`, envInt('RATE_ASK_PER_MIN', 10), 60_000)
+  const perMin = hit(`ask:${mapping.docId}:${who}`, quota.ask_per_min_per_visitor, 60_000)
   if (!perMin.ok) return tooMany(perMin)
-  const perDay = hit(`ask-day:${mapping.docId}`, envInt('ASK_DAILY_LIMIT', 1000), 86_400_000)
-  if (!perDay.ok) return json({ error: 'the assistant has reached its daily limit' }, 429)
+  const allowance = await takeAsk(mapping.docId, { perDay: quota.ask_per_day, perMonth: quota.ask_per_month })
+  if (!allowance.ok) {
+    return json(
+      {
+        error:
+          allowance.reason === 'day'
+            ? 'the assistant has reached its daily limit'
+            : 'the assistant has reached its monthly limit',
+        code: 'quota_exceeded',
+        limit: allowance.limit,
+        period: allowance.reason,
+      },
+      429,
+    )
+  }
 
   let body: { question?: unknown; version_id?: unknown; history?: unknown }
   try {

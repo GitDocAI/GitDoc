@@ -12,6 +12,8 @@ const selfHostedRoutes = {
       injectRoute({ pattern: '/api/publish', entrypoint: './src/node/publish.ts', prerender: false })
       injectRoute({ pattern: '/api/sites', entrypoint: './src/node/sites.ts', prerender: false })
       injectRoute({ pattern: '/api/reindex', entrypoint: './src/node/reindex.ts', prerender: false })
+      injectRoute({ pattern: '/api/settings', entrypoint: './src/node/settings.ts', prerender: false })
+      injectRoute({ pattern: '/api/usage', entrypoint: './src/node/settings.ts', prerender: false })
     },
   },
 }

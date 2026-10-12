@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro'
 import { canAccessDoc } from '../../lib/auth'
 import { emitEvent } from '../../lib/events'
-import { clientKey, envInt, hit, tooMany } from '../../lib/rateLimit'
+import { clientKey, hit, tooMany } from '../../lib/rateLimit'
+import { effectiveQuota } from '../../lib/settings'
 import { searchBackend } from '../../lib/search'
 
 export const prerender = false
@@ -21,7 +22,8 @@ export const POST: APIRoute = async ({ request, locals, clientAddress }) => {
     if (!canAccessDoc(locals.session, mapping)) return json({ error: 'forbidden' }, 403)
   }
 
-  const verdict = hit(`search:${clientKey(request, clientAddress)}`, envInt('RATE_SEARCH_PER_MIN', 120), 60_000)
+  const quota = await effectiveQuota(mapping.docId)
+  const verdict = hit(`search:${mapping.docId}:${clientKey(request, clientAddress)}`, quota.search_per_min_per_visitor, 60_000)
   if (!verdict.ok) return tooMany(verdict)
 
   let body: { query?: unknown; version_id?: unknown; limit?: unknown }
