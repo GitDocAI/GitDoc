@@ -28,7 +28,7 @@ docker compose up -d --build  # readers: http://localhost:8080   admin: http://1
 Open the [admin panel](#the-admin-panel): it sets a password and shows the commands to connect your computer. Or, from a docs folder:
 
 ```bash
-npm install -g gitdoc-cli
+npm install -g @gitdocai/cli
 gitdoc connect http://localhost:8080 --token <PUBLISH_TOKEN>
 gitdoc publish
 ```

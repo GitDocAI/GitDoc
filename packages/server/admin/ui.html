@@ -310,7 +310,7 @@ async function viewConnect() {
     try { localStorage.setItem('gitdoc.publicUrl', base) } catch {}
     const t = await getToken()
     cmds.replaceChildren(h('ol', { class: 'steps' },
-      h('li', {}, h('h3', {}, 'Install the CLI'), cmd('npm install -g gitdoc-cli')),
+      h('li', {}, h('h3', {}, 'Install the CLI'), cmd('npm install -g @gitdocai/cli')),
       h('li', {}, h('h3', {}, 'Connect it to this server'),
         h('p', { class: 'muted', style: 'margin:0' }, 'The token is saved in your user configuration, never in the project.'),
         cmd(`gitdoc connect ${base} --token ${reveal ? t : '<your PUBLISH_TOKEN>'}`, () => `gitdoc connect ${base} --token ${t}`),
