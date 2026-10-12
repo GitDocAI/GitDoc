@@ -12,6 +12,7 @@ import type { DomainMapping } from './lib/types'
 const API_ROUTES = new Set([
   '/api/search',
   '/api/ask',
+  '/api/mcp', // read-only MCP server; self-gates (401 JSON)
   '/api/publish', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/sites', // self-hosted only; authenticated by PUBLISH_TOKEN
   '/api/auth/login',

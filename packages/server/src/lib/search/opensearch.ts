@@ -1,7 +1,8 @@
 import http from 'node:http'
 import https from 'node:https'
+import type { Embedder } from '../ai'
 import { plainText } from './text'
-import type { IndexReport, SearchBackend, SearchDoc, SearchQuery, SearchResult, SiteRef } from './types'
+import type { IndexReport, Passage, SearchBackend, SearchDoc, SearchQuery, SearchResult, SiteRef } from './types'
 
 
 /**
@@ -12,14 +13,9 @@ import type { IndexReport, SearchBackend, SearchDoc, SearchQuery, SearchResult, 
  * a `knn` clause next to the text clauses, `<mark>` highlighting. An index
  * written by the hosted pipeline is therefore readable here and vice versa.
  *
- * Semantic search is opt-in: give it an OpenAI-compatible embeddings endpoint
- * (OpenAI, Ollama, vLLM, …). Without one the index is text-only.
+ * Semantic search is opt-in: give it an embeddings model (see lib/ai). Without
+ * one the index is text-only.
  */
-
-export interface Embedder {
-  readonly model: string
-  embed(inputs: string[]): Promise<number[][]>
-}
 
 export interface OpenSearchOptions {
   url: string
@@ -219,9 +215,8 @@ export class OpenSearchBackend implements SearchBackend {
     await this.json('DELETE', OpenSearchBackend.indexName(site), undefined, [404])
   }
 
-  async search(site: SiteRef, q: SearchQuery): Promise<SearchResult[]> {
+  private async query(site: SiteRef, q: SearchQuery, source: string[], highlight: boolean, size: number) {
     const index = OpenSearchBackend.indexName(site)
-    const limit = q.limit && q.limit > 0 ? Math.min(q.limit, 50) : 10
 
     let vector: number[] | null = null
     if (this.embedder) {
@@ -238,28 +233,37 @@ export class OpenSearchBackend implements SearchBackend {
       { match: { title: { query: q.query, boost: 2.0 } } },
       { match: { content: { query: q.query, boost: 1.0 } } },
     ]
-    if (vector) should.push({ knn: { doc_embedding: { vector, k: limit } } })
+    if (vector) should.push({ knn: { doc_embedding: { vector, k: size } } })
 
     const r = await this.json(
       'POST',
       `${index}/_search`,
       {
-        size: limit,
+        size,
         query: { bool: { must, should, minimum_should_match: 1 } },
-        _source: ['entry_id', 'section_id', 'version_id', 'path', 'title'],
-        highlight: {
-          pre_tags: ['<mark>'],
-          post_tags: ['</mark>'],
-          fields: {
-            title: { fragment_size: 100, number_of_fragments: 1 },
-            content: { fragment_size: 150, number_of_fragments: 3 },
-          },
-        },
+        _source: source,
+        ...(highlight
+          ? {
+              highlight: {
+                pre_tags: ['<mark>'],
+                post_tags: ['</mark>'],
+                fields: {
+                  title: { fragment_size: 100, number_of_fragments: 1 },
+                  content: { fragment_size: 150, number_of_fragments: 3 },
+                },
+              },
+            }
+          : {}),
       },
       [404], // never published → nothing to find
     )
+    return (r?.hits?.hits ?? []) as any[]
+  }
 
-    return (r?.hits?.hits ?? []).map((h: any) => ({
+  async search(site: SiteRef, q: SearchQuery): Promise<SearchResult[]> {
+    const limit = q.limit && q.limit > 0 ? Math.min(q.limit, 50) : 10
+    const hits = await this.query(site, q, ['entry_id', 'section_id', 'version_id', 'path', 'title'], true, limit)
+    return hits.map((h) => ({
       version_id: h._source?.version_id ?? '',
       section_id: h._source?.section_id ?? '',
       entry_id: h._source?.entry_id ?? '',
@@ -269,30 +273,25 @@ export class OpenSearchBackend implements SearchBackend {
       score: h._score ?? 0,
     }))
   }
-}
 
-/** OpenAI-compatible `/embeddings` client (OpenAI, Ollama's /v1, vLLM, …). */
-export class HttpEmbedder implements Embedder {
-  constructor(
-    private readonly url: string,
-    readonly model: string,
-    private readonly apiKey?: string,
-  ) {}
-
-  async embed(inputs: string[]): Promise<number[][]> {
-    const res = await fetch(this.url.replace(/\/+$/, '') + '/embeddings', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
-      },
-      body: JSON.stringify({ model: this.model, input: inputs }),
-      signal: AbortSignal.timeout(60_000),
-    })
-    if (!res.ok) throw new Error(`embeddings ${res.status}: ${(await res.text()).slice(0, 200)}`)
-    const j = (await res.json()) as { data?: { index: number; embedding: number[] }[] }
-    const data = [...(j.data ?? [])].sort((a, b) => a.index - b.index)
-    if (data.length !== inputs.length) throw new Error('embeddings: unexpected response')
-    return data.map((d) => d.embedding)
+  /** Whole pages (the hosted index is page-level), trimmed to a prompt-sized excerpt. */
+  async passages(site: SiteRef, q: SearchQuery): Promise<Passage[]> {
+    const limit = q.limit && q.limit > 0 ? Math.min(q.limit, 20) : 6
+    const hits = await this.query(
+      site,
+      q,
+      ['entry_id', 'section_id', 'version_id', 'path', 'title', 'content'],
+      false,
+      limit,
+    )
+    return hits.map((h) => ({
+      version_id: h._source?.version_id ?? '',
+      section_id: h._source?.section_id ?? '',
+      entry_id: h._source?.entry_id ?? '',
+      path: h._source?.path ?? '',
+      title: h._source?.title ?? '',
+      text: String(h._source?.content ?? '').slice(0, 3000),
+      score: h._score ?? 0,
+    }))
   }
 }

@@ -56,3 +56,49 @@ export function highlight(text: string, terms: string[], max = 3, size = 150): s
   }
   return out
 }
+
+export interface Chunk {
+  heading: string
+  /** Plain text of the chunk. */
+  text: string
+}
+
+/**
+ * Split a markdown page into passages: cut at headings, then at paragraph
+ * boundaries so no chunk is much longer than `max` characters. Fenced code
+ * is never split at a `#` comment.
+ */
+export function chunkMarkdown(src: string, max = 1200): Chunk[] {
+  const body = src.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+  const out: Chunk[] = []
+  let heading = ''
+  let buf: string[] = []
+  let size = 0
+  let fence = false
+
+  const flush = () => {
+    const text = plainText(buf.join('\n'))
+    if (text.length > 20) out.push({ heading, text })
+    buf = []
+    size = 0
+  }
+
+  for (const line of body.split('\n')) {
+    if (/^\s*```/.test(line)) fence = !fence
+    const h = !fence && /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line)
+    if (h) {
+      flush()
+      heading = h[2]
+      continue
+    }
+    if (!fence && line.trim() === '' && size >= max * 0.6) {
+      flush()
+      continue
+    }
+    buf.push(line)
+    size += line.length + 1
+    if (size > max * 1.5 && !fence) flush()
+  }
+  flush()
+  return out
+}

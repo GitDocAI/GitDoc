@@ -46,6 +46,19 @@ export interface SearchResult {
   score: number
 }
 
+/** A piece of a page, for answering questions (RAG). */
+export interface Passage {
+  entry_id: string
+  section_id: string
+  version_id: string
+  path: string
+  title: string
+  /** Heading the passage sits under, when known. */
+  heading?: string
+  text: string
+  score: number
+}
+
 export interface IndexReport {
   backend: string
   indexed: number
@@ -61,4 +74,6 @@ export interface SearchBackend {
   /** Drop everything indexed for `site`. */
   remove(site: SiteRef): Promise<void>
   search(site: SiteRef, q: SearchQuery): Promise<SearchResult[]>
+  /** The passages most relevant to `q`, with their text. Used by Ask. */
+  passages(site: SiteRef, q: SearchQuery): Promise<Passage[]>
 }

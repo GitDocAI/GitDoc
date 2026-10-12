@@ -36,6 +36,12 @@ gitdoc publish
 
 A server hosts any number of documentations. Each answers on its own **hostname** (`<name>.localhost` locally, your domain in production: `gitdoc publish --hostname docs.acme.com`). With a single site published the server answers on any host; with several, an unknown host gets a 404 that lists the hostnames that exist.
 
+To show the assistant panel, enable it in `gitdocai.json`:
+
+```json
+{ "assistant": { "enabled": true, "custom_instructions": "Answer briefly." } }
+```
+
 ### Configuration
 
 | Variable | Meaning |
@@ -73,29 +79,46 @@ npm run build
 npm test        # starts the real server and publishes through its HTTP API
 ```
 
-## Search
+## Search, assistant and agents
 
-The search box works out of the box: pages are indexed when you publish, with a built-in BM25 index (title weighs double, prefixes match as you type, accents are folded). Nothing to run.
+**Search** works out of the box. Pages are indexed when you publish, with a built-in BM25 index (title weighs double, prefixes match as you type, accents are folded). Nothing to run.
 
-For larger sites, or if you already operate OpenSearch, point the server at it:
+**Meaning-based search.** Point the server at an embeddings model and the same built-in index also keeps vectors for every passage and fuses both rankings (reciprocal rank fusion). A search for "containers" finds the page about Docker. Documentation sites are small enough that exact in-process cosine takes milliseconds, so no vector database is needed.
+
+**Ask (assistant).** With a chat model configured, `/api/ask` answers readers' questions from the docs: it retrieves the best passages, answers only from them, in the reader's language, and cites its sources. The documentation owner's `custom_instructions` come from the published config, never from the request, and the excerpts are fenced as data against prompt injection.
+
+**Agents.** `/api/mcp` is a read-only [MCP](https://modelcontextprotocol.io) server (`search_docs`, `read_page`, `list_pages`): `claude mcp add --transport http docs https://docs.example.com/api/mcp`. Every page is also available as Markdown (`<page>.md`) and in `/llms.txt`.
+
+### Configuration
 
 | Variable | Meaning |
 |---|---|
-| `SEARCH_BACKEND` | `embedded` or `opensearch`. Default: `opensearch` if `OPENSEARCH_URL` is set, else `embedded`. |
-| `OPENSEARCH_URL` | e.g. `http://opensearch:9200` (credentials may be in the URL). |
-| `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD` | Basic auth. |
-| `OPENSEARCH_INSECURE` | `true` to accept a self-signed certificate. |
-| `EMBEDDINGS_URL`, `EMBEDDINGS_MODEL`, `EMBEDDINGS_API_KEY` | Any OpenAI-compatible embeddings API (OpenAI, Ollama's `/v1`, vLLM…). Turns on hybrid text + vector search. OpenSearch only. |
+| `AI_URL` | Base URL of any OpenAI-compatible API (ThreatWinds, OpenAI, Ollama `/v1`, vLLM…). |
+| `AI_API_KEY`, `AI_API_SECRET` | Key alone → `Authorization: Bearer`. Both → `api-key` / `api-secret` headers (ThreatWinds). |
+| `AI_EMBEDDING_MODEL` | Turns on meaning-based search. |
+| `AI_CHAT_MODEL` | Turns on Ask. |
+| `AI_MAX_ANSWER_TOKENS` | Answer length cap (default 800). |
+| `SEARCH_MIN_SIMILARITY` | Passages less similar than this are ignored (default 0.3). |
+| `SEARCH_BACKEND` | `embedded` or `opensearch`. Default: `opensearch` if `OPENSEARCH_URL` is set. |
+| `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD`, `OPENSEARCH_INSECURE` | Use OpenSearch instead of the built-in index. |
+| `RATE_SEARCH_PER_MIN`, `RATE_ASK_PER_MIN`, `ASK_DAILY_LIMIT` | Limits (defaults 120, 10, 1000). Ask costs money: keep a cap. |
+| `TRUST_PROXY` | `true` behind a proxy/CDN so limits count real visitors. |
+| `EVENTS`, `EVENTS_URL`, `EVENTS_TOKEN` | Record page views, searches and questions (`file` or an HTTP endpoint). Off by default; no IP is stored. |
 
-`docker compose --profile opensearch up -d` (in `deploy/selfhost`) also starts a single-node OpenSearch on the compose network.
+### OpenSearch
 
-The OpenSearch adapter uses the same index name (`doc_{org}_{doc}`), document fields, mapping and query as the hosted product, so an index written by one is readable by the other. If the search backend is down while you publish, the site still goes live and the publish response carries a `search.error`.
+You do not need it for a documentation site. Use it for a very large corpus, to share one index between servers, or if you already run it. It is an optional, commented service in `deploy/selfhost/docker-compose.yml`. The adapter uses the same index name (`doc_{org}_{doc}`), fields, mapping and query as the hosted product, so an index written by one is readable by the other.
 
-Add another engine by implementing `SearchBackend` (`packages/server/src/lib/search/types.ts`): `replace`, `remove`, `search`.
+If the search backend or the model is down while you publish, the site still goes live and the publish response carries a `search.error` / `search.warning`. If the model is down at query time, search falls back to text.
+
+Add another engine by implementing `SearchBackend` (`packages/server/src/lib/search/types.ts`): `replace`, `remove`, `search`, `passages`.
+
+### Privacy
+
+With a hosted model, the passages used to answer a question leave your server. For private documentation, use a model you host.
 
 ## Known limitations
 
-- **"Ask AI" is not available in this build.** It needs a language model and a retrieval backend that are not part of this repository; the search box (see [Search](#search)) works.
 - **Private sites need an identity provider** you run yourself (see `DOCS_PRIVATE`).
 - The package is alpha: the HTTP API and the on-disk format may still change.
 
