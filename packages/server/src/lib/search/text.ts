@@ -102,3 +102,66 @@ export function chunkMarkdown(src: string, max = 1200): Chunk[] {
   flush()
   return out
 }
+
+/**
+ * Words that say nothing about what a page is about. They are dropped from the
+ * query: "how to install" is a search for "install", and without this every
+ * page that has a "to" or a "how" in it matches.
+ */
+const STOPWORDS = new Set(
+  (
+    // English
+    'a an and are as at be but by can could do does did for from had has have how i if in into is it its me my no not of on ' +
+    'or our so than that the their them then there these they this to up us was we were what when where which who why will ' +
+    'with would you your about after again all also any been before being between both each few more most other over same ' +
+    'get got make way ' +
+    'should some such too under very while ' +
+    // Spanish
+    'el la los las un una unos unas y o u de del al en con por para sin sobre entre es son ser fue como que cual cuales ' +
+    'cuando donde quien quienes porque se su sus lo le les mi mis tu tus nuestro nuestra esto eso esta este estos estas ' +
+    'hay muy mas pero si no ya hacer puedo puede pueden'
+  ).split(' '),
+)
+
+/** The words of a query that carry meaning; all of them if nothing else is left. */
+export function queryTerms(query: string): string[] {
+  const all = tokenize(query)
+  const kept = all.filter((t) => !STOPWORDS.has(t))
+  return kept.length ? kept : all
+}
+
+/** Hits scoring below this share of the best lexical hit are noise. */
+export const LEXICAL_FLOOR_RATIO = 0.3
+/** The best page must stand this far (cosine) above the median page, or nothing matched by meaning. */
+export const SEMANTIC_MIN_GAP = 0.06
+
+/**
+ * Which semantic similarities (cosine, one per page) count as a match.
+ *
+ * A fixed threshold does not work: embedding models differ a lot in how close
+ * unrelated text sits (some put everything at 0.3-0.5). What does hold is that
+ * a question about the docs has a *winner* clearly above the rest, while
+ * nonsense leaves every page bunched around the median. So: nothing matches
+ * unless the best page stands out from the median, and then only pages in the
+ * upper half between the median and the best do.
+ *
+ * Returns the cut-off, or null when there is no semantic match at all.
+ */
+export function semanticCutoff(sims: number[], floor: number): number | null {
+  if (!sims.length) return null
+  const sorted = [...sims].sort((a, b) => b - a)
+  const top = sorted[0]
+  if (top < floor) return null
+  const median = sorted[Math.floor(sorted.length / 2)]
+  if (sorted.length >= 3 && top - median < SEMANTIC_MIN_GAP) return null
+  return Math.max(floor, median + (top - median) * 0.5)
+}
+
+/**
+ * How many of the query's meaningful terms a page must match to be a hit:
+ * all of one or two, three quarters of more ("run a docker image" needs two of
+ * run/docker/image, so a page that merely says "run" is out).
+ */
+export function termsRequired(n: number): number {
+  return n <= 2 ? n : Math.max(2, Math.floor(n * 0.75))
+}

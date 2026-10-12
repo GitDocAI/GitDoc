@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Embedder } from '../ai'
-import { chunkMarkdown, highlight, plainText, tokenize } from './text'
+import { LEXICAL_FLOOR_RATIO, chunkMarkdown, highlight, plainText, queryTerms, semanticCutoff, termsRequired, tokenize } from './text'
 import type { IndexReport, Passage, SearchBackend, SearchDoc, SearchQuery, SearchResult, SiteRef } from './types'
 
 /**
@@ -232,7 +232,7 @@ export class EmbeddedSearch implements SearchBackend {
 
   /** Page ranking by BM25: [doc, score][] best first, plus the terms that matched. */
   private lexical(idx: Loaded, query: string, versionId?: string) {
-    const terms = tokenize(query)
+    const terms = queryTerms(query)
     const n = idx.s.docs.length
     const scores = new Map<number, number>()
     const hit = new Map<number, Set<string>>()
@@ -250,10 +250,14 @@ export class EmbeddedSearch implements SearchBackend {
         matched.add(v)
       }
     })
+    const need = termsRequired(new Set(terms).size)
     const ranked = [...scores]
       .filter(([d]) => !versionId || idx.s.docs[d].version_id === versionId)
+      .filter(([d]) => (hit.get(d)?.size ?? 0) >= need)
       .map(([d, s]) => [d, s * (0.5 + 0.5 * ((hit.get(d)?.size ?? 0) / (terms.length || 1)))] as const)
       .sort((a, b) => b[1] - a[1])
+      // A page that matches only a sliver of what the best page does is noise.
+      .filter(([, sc], _i, all) => sc >= all[0][1] * LEXICAL_FLOOR_RATIO)
     return { ranked, marks: [...matched] }
   }
 
@@ -268,15 +272,22 @@ export class EmbeddedSearch implements SearchBackend {
     }
     const dim = idx.s.dim
     if (q.length !== dim) return [] // the model changed since indexing
-    const out: [number, number][] = []
+    const all: [number, number][] = []
+    const bestOfPage = new Map<number, number>()
     for (let c = 0; c < idx.s.chunks.length; c++) {
-      if (versionId && idx.s.docs[idx.s.chunks[c].doc].version_id !== versionId) continue
+      const doc = idx.s.chunks[c].doc
+      if (versionId && idx.s.docs[doc].version_id !== versionId) continue
       let dot = 0
       const o = c * dim
       for (let i = 0; i < dim; i++) dot += q[i] * idx.vectors[o + i]
-      if (dot >= this.minSim) out.push([c, dot])
+      all.push([c, dot])
+      if (dot > (bestOfPage.get(doc) ?? -1)) bestOfPage.set(doc, dot)
     }
-    return out.sort((a, b) => b[1] - a[1])
+    // Judge the pages (their best passage), not the passages: a long page
+    // would otherwise crowd the statistics.
+    const cut = semanticCutoff([...bestOfPage.values()], this.minSim)
+    if (cut === null) return []
+    return all.filter(([, sim]) => sim >= cut).sort((a, b) => b[1] - a[1])
   }
 
   async search(site: SiteRef, q: SearchQuery): Promise<SearchResult[]> {
@@ -352,7 +363,7 @@ export class EmbeddedSearch implements SearchBackend {
       sem.slice(0, limit * 2).forEach(([c], r) => picked.set(c, (picked.get(c) ?? 0) + 1 / (RRF_K + r + 1)))
     }
     // Lexical: the best chunk(s) of the best pages, by query-term overlap.
-    const terms = new Set(lex.marks.length ? lex.marks : tokenize(q.query))
+    const terms = new Set(lex.marks.length ? lex.marks : queryTerms(q.query))
     lex.ranked.slice(0, limit).forEach(([d], r) => {
       const best = idx.s.chunks
         .map((ch, c) => [c, ch] as const)

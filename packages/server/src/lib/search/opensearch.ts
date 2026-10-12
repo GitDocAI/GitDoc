@@ -1,7 +1,7 @@
 import http from 'node:http'
 import https from 'node:https'
 import type { Embedder } from '../ai'
-import { plainText } from './text'
+import { LEXICAL_FLOOR_RATIO, plainText, queryTerms, semanticCutoff, termsRequired } from './text'
 import type { IndexReport, Passage, SearchBackend, SearchDoc, SearchQuery, SearchResult, SiteRef } from './types'
 
 
@@ -251,6 +251,10 @@ export class OpenSearchBackend implements SearchBackend {
 
     const filter: unknown[] = [{ term: { doc_type: 'doc_entry' } }]
     if (q.versionId) filter.push({ term: { version_id: q.versionId } })
+    // "how to install" is a search for "install": no stopwords in the text query.
+    const terms = queryTerms(q.query)
+    const lexical = terms.join(' ') || q.query
+    const required = String(termsRequired(new Set(terms).size) || 1)
 
     const text = this.json(
       'POST',
@@ -261,8 +265,10 @@ export class OpenSearchBackend implements SearchBackend {
           bool: {
             must: filter,
             should: [
-              { match: { title: { query: q.query, boost: 2.0 } } },
-              { match: { content: { query: q.query, boost: 1.0 } } },
+              { match: { title: { query: lexical, boost: 2.0, minimum_should_match: required } } },
+              { match: { content: { query: lexical, boost: 1.0, minimum_should_match: required } } },
+              // the last word may be a prefix: "install" finds "installation"
+              { match_bool_prefix: { content: { query: lexical, boost: 0.5, minimum_should_match: required } } },
             ],
             minimum_should_match: 1,
           },
@@ -289,10 +295,10 @@ export class OpenSearchBackend implements SearchBackend {
           'POST',
           `${index}/_search`,
           {
-            size,
-            // cosinesimil scores are (1 + cos) / 2: drop what is unrelated.
-            min_score: (1 + this.minSimilarity) / 2,
-            query: { knn: { doc_embedding: { vector, k: size, filter: { bool: { must: filter } } } } },
+            // Enough neighbours to tell a real winner from a flat field: the
+            // cut-off below needs the spread, not just the best few.
+            size: Math.max(size, 50),
+            query: { knn: { doc_embedding: { vector, k: Math.max(size, 50), filter: { bool: { must: filter } } } } },
             _source: Array.from(new Set([...source, 'content'])),
           },
           [404],
@@ -300,8 +306,20 @@ export class OpenSearchBackend implements SearchBackend {
       : Promise.resolve(null)
 
     const [t, v] = await Promise.all([text, semantic])
-    const textHits = (t?.hits?.hits ?? []) as any[]
-    const vectorHits = (v?.hits?.hits ?? []) as any[]
+    let textHits = (t?.hits?.hits ?? []) as any[]
+    let vectorHits = (v?.hits?.hits ?? []) as any[]
+    // Cut the tail: pages scoring a sliver of the best match are noise, and a
+    // vector query always returns its k nearest, related or not.
+    if (textHits.length) {
+      const top = textHits[0]._score ?? 0
+      textHits = textHits.filter((h) => (h._score ?? 0) >= top * LEXICAL_FLOOR_RATIO)
+    }
+    if (vectorHits.length) {
+      // cosinesimil scores are (1 + cosine) / 2
+      const cos = (h: any) => 2 * (h._score ?? 0) - 1
+      const cut = semanticCutoff(vectorHits.map(cos), this.minSimilarity)
+      vectorHits = cut === null ? [] : vectorHits.filter((h) => cos(h) >= cut).slice(0, size)
+    }
     if (!vectorHits.length) return textHits
 
     const K = 60

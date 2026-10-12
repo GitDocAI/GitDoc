@@ -330,7 +330,8 @@ test('search: the OpenSearch adapter writes and queries the hosted index shape',
   const q = JSON.parse(os.seen.filter((x) => x.url.endsWith('/_search')).at(-1).raw)
   assert.equal(q.size, 5)
   assert.equal(q.query.bool.should[0].match.title.boost, 2)
-  assert.equal(q.query.bool.should.length, 2) // no knn clause without embeddings
+  assert.equal(q.query.bool.should.length, 3) // title, content, content prefix: no knn clause without embeddings
+  assert.equal(q.query.bool.should[0].match.title.query, 'docker')
 })
 
 test('search: with an embeddings endpoint the index gets vectors and queries use knn', async () => {
@@ -348,7 +349,7 @@ test('search: with an embeddings endpoint the index gets vectors and queries use
   const fused = await search(s.port, 'vec.localhost', 'anything')
   const bodies = os.seen.filter((x) => x.url.endsWith('/_search')).map((x) => JSON.parse(x.raw))
   const knn = bodies.find((b) => b.query.knn).query.knn.doc_embedding
-  assert.equal(knn.k, 10)
+  assert.equal(knn.k, 50, 'asks for enough neighbours to see the spread')
   assert.equal(knn.vector.length, 8)
   assert.ok(knn.filter.bool.must.some((c) => c.term?.doc_type === 'doc_entry'), 'filtered like the text query')
   assert.ok(bodies.some((b) => b.query.bool), 'and the text query still runs')
@@ -1245,4 +1246,34 @@ test('sessions: the public and admin servers agree on one key, and sessions surv
   const again = await startServer({ env: { DATA_DIR: first.data, ADMIN_PASSWORD: 'preset admin password' } })
   assert.equal((await getPage(again.port, 'keyed.localhost', '/guides/deploy', siteCookie)).status, 200)
   assert.equal((await adminJson(again.port, '/admin/api/state', { cookie: adminCookie })).json.authenticated, true)
+})
+
+// ------------------------------------------------------ relevance ---
+
+test('search: filler words do not match everything, and weak matches are cut', async () => {
+  const s = await startServer()
+  await publish(
+    s.port,
+    makeSite({
+      name: 'Relevance',
+      pages: [
+        ['install', 'Installing the tool', 'How to install: run npm install gitdoc-cli, then check the version.'],
+        ['deploy', 'Deploying', 'How to publish your site to a server. You can use a container to do it.'],
+        ['pricing', 'Pricing', 'How much it costs depends on the plan. To pay, use a card.'],
+        ['faq', 'FAQ', 'What is a site? How do I use it? Where to start?'],
+      ],
+    }),
+    'rel.localhost',
+  )
+  const titles = async (q) => (await search(s.port, 'rel.localhost', q)).results.map((r) => r.title)
+
+  // "how", "to" are in every page; only "install" says what is wanted.
+  assert.deepEqual(await titles('how to install'), ['Installing the tool'])
+  assert.ok((await titles('how to')).length > 0, 'a query of only filler words still answers, by those words')
+  // A prefix of the last word still finds it (search as you type).
+  assert.deepEqual(await titles('instal'), ['Installing the tool'])
+  // Spanish filler too, accents folded.
+  assert.deepEqual(await titles('cómo es el npm'), ['Installing the tool'])
+  // Several meaningful terms: most of them must be there, not just one.
+  assert.deepEqual(await titles('publish server container card'), ['Deploying'], 'a page with only "card" is not a match')
 })

@@ -81,7 +81,7 @@ npm test        # starts the real server and publishes through its HTTP API
 
 ## Search, assistant and agents
 
-**Search** works out of the box. Pages are indexed when you publish, with a built-in BM25 index (title weighs double, prefixes match as you type, accents are folded). Nothing to run.
+**Search** works out of the box, and it is selective: filler words ("how", "to", "cómo") are ignored, a page must match most of the meaningful terms, weak matches are cut, and a query that has no winner by meaning returns nothing rather than the whole site. Pages are indexed when you publish, with a built-in BM25 index (title weighs double, prefixes match as you type, accents are folded). Nothing to run.
 
 **Meaning-based search.** Point the server at an embeddings model and the same built-in index also keeps vectors for every passage and fuses both rankings (reciprocal rank fusion). A search for "containers" finds the page about Docker. Documentation sites are small enough that exact in-process cosine takes milliseconds, so no vector database is needed.
 
@@ -101,7 +101,7 @@ npm test        # starts the real server and publishes through its HTTP API
 | `ADMIN_PORT`, `ADMIN_HOST` | Admin panel address (default `8081` on `127.0.0.1`; the image listens on `0.0.0.0` inside the container). `ADMIN_ENABLED=false` turns it off. |
 | `ADMIN_PASSWORD` | Preset the panel password and skip onboarding. |
 | `PUBLIC_URL` | Prefills the address shown in the panel's connect commands. |
-| `SEARCH_MIN_SIMILARITY` | Passages less similar than this to the query are ignored (cosine, default 0.3). It depends on the embeddings model: a small one such as `nomic-embed-text` rates unrelated text around 0.3–0.4, so it needs about 0.38; stronger models separate better and work with the default. |
+| `SEARCH_MIN_SIMILARITY` | Hard floor on the cosine similarity of a semantic match (default 0.3). Beyond it, the cut is adaptive: the best page must stand clearly above the median page, and only pages in the upper half between the two count, so it does not need tuning per model. |
 | `SEARCH_BACKEND` | `embedded` or `opensearch`. Default: `opensearch` if `OPENSEARCH_URL` is set. |
 | `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD`, `OPENSEARCH_INSECURE` | Use OpenSearch instead of the built-in index. |
 | `RATE_SEARCH_PER_MIN`, `RATE_ASK_PER_MIN`, `ASK_DAILY_LIMIT` | Limits (defaults 120, 10, 1000). Ask costs money: keep a cap. |
