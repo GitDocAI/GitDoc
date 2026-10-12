@@ -57,21 +57,12 @@ const loaded = await loadSsrBundle(
 if (loaded instanceof Response) return loaded
 const bundle = loaded
 
-// A URL that names no section or page is a 404, not the home page: crawlers
-// would index endless duplicates and readers would not notice a broken link.
-if (bundle.notFound) {
-  return errorPage({
-    status: 404,
-    title: 'Page not found',
-    message: 'This page does not exist. It may have been moved or removed.',
-  })
-}
 
 if (isMarkdown) {
   const entry = bundle.currentEntry
   const section = bundle.activeSection
   const version = bundle.activeVersion
-  if (!entry || !section || !version) {
+  if (!entry || !section || !version || bundle.notFound) {
     return new Response('Not found', { status: 404 })
   }
   const md = await source.readText(
@@ -187,6 +178,18 @@ const isKbHome =
   (pathWithoutVersion === '/' ||
     pathWithoutVersion === '' ||
     (kbSlugFree && pathWithoutVersion === `/${kbSlug}`))
+
+// A URL that names no section or page is a 404, not the home page: crawlers
+// would index endless duplicates and readers would not notice a broken link.
+// The Help Center (knowledge base) has its own route, `/{kb name}`, which is
+// not a section, so it is decided here where the KB is known.
+if (bundle.notFound && !isKbHome) {
+  return errorPage({
+    status: 404,
+    title: 'Page not found',
+    message: 'This page does not exist. It may have been moved or removed.',
+  })
+}
 
 // Canonicalize KB-home URLs. When the rendered page IS the KB landing but
 // the address bar doesn't match the canonical (`{versionPrefix}/{kbSlug?}`),

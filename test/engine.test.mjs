@@ -1277,3 +1277,18 @@ test('search: filler words do not match everything, and weak matches are cut', a
   // Several meaningful terms: most of them must be there, not just one.
   assert.deepEqual(await titles('publish server container card'), ['Deploying'], 'a page with only "card" is not a match')
 })
+
+test('404: the Help Center (knowledge base) route is not a missing page', async () => {
+  const s = await startServer()
+  await publish(
+    s.port,
+    makeSite({ name: 'Kb Site', pages: DOCS, extra: { kb: { enabled: true, name: 'Help Center', hero_title: 'How can we help?' } } }),
+    'kb.localhost',
+  )
+  const status = async (p) => (await http(s.port, p, { host: 'kb.localhost' })).status
+  assert.equal(await status('/help-center'), 200)
+  assert.match((await http(s.port, '/help-center', { host: 'kb.localhost' })).text, /How can we help\?/)
+  assert.equal(await status('/guides/deploy'), 200)
+  assert.equal(await status('/nope'), 404, 'other unknown URLs still 404')
+  assert.equal(await status('/help-center/nope'), 404)
+})
