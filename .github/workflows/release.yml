@@ -1,0 +1,78 @@
+name: Release
+
+# One pipeline per release: publishes the engine to npm (@gitdocai/engine) and
+# the self-host image to GitHub Container Registry. It runs when a GitHub
+# Release is published; the version is the release tag (v0.1.0 → 0.1.0).
+on:
+  release:
+    types: [published]
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22' # building needs Node >= 22.12 (Astro 7)
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      # Same mechanism as the CLI's old release action: the version comes from
+      # the tag, and an .npmrc next to the package reads the token from NPM_TOKEN.
+      - name: Publish @gitdocai/engine
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          VERSION="${VERSION#v}"
+
+          cd engine
+          npm pkg set version="$VERSION"
+
+          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > .npmrc
+
+          # A pre-release must not become `latest`.
+          if [ "$PRERELEASE" = "true" ]; then
+            npm publish --tag next --access public
+          else
+            npm publish --access public
+          fi
+
+  image:
+    needs: npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags from the release tag
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/gitdocai/gitdoc-server
+          tags: type=semver,pattern={{version}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/selfhost/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

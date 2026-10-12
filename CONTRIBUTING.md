@@ -27,6 +27,14 @@ enables the tests that run against a real OpenSearch.
   `packages/server/src/lib/search/types.ts` and
   `packages/server/src/lib/ai/index.ts`.
 
+## Releasing
+
+Publish a GitHub Release (tag `v<version>`). One workflow does the rest: it
+builds and tests, publishes `@gitdocai/engine` to npm, and pushes
+`ghcr.io/gitdocai/gitdoc-server` with the same version. It needs the
+`NPM_TOKEN` repository secret. A release marked as pre-release goes to the
+`next` dist-tag instead of `latest`.
+
 ## Licensing
 
 The code in this repository is licensed under AGPL-3.0-only. By submitting a
