@@ -5,15 +5,15 @@ name: Release
 # image to GitHub Container Registry. The version is the release tag
 # (v0.1.0 → 0.1.0). If anything fails, nothing is published.
 #
-# Jobs run on the organisation's own runner (`gitdocai-dev`), like the rest of
-# GitDocAI's workflows: we do not use GitHub-hosted runners.
+# Jobs run on GitHub-hosted runners (`ubuntu-latest`) for now. To use the
+# organisation's own runner again, set `runs-on: gitdocai-dev` in every job.
 on:
   release:
     types: [published]
 
 jobs:
   build:
-    runs-on: gitdocai-dev
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +34,7 @@ jobs:
 
   test:
     needs: build
-    runs-on: gitdocai-dev
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: true
       matrix:
@@ -72,7 +72,7 @@ jobs:
 
   npm:
     needs: test
-    runs-on: gitdocai-dev
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -109,7 +109,7 @@ jobs:
 
   image:
     needs: npm
-    runs-on: gitdocai-dev
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
