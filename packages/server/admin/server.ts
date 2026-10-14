@@ -16,11 +16,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { hit } from '../src/lib/rateLimit'
 import { searchBackend } from '../src/lib/search'
-import { ensureAllIndexed, reindexSite } from '../src/lib/search/reindex'
+import { ensureAllIndexed, ensureIndexed, reindexSite } from '../src/lib/search/reindex'
 import {
   effectiveQuota,
   hashPassword,
@@ -149,6 +149,34 @@ const readJson = async <T>(file: string): Promise<T | null> => {
   } catch {
     return null
   }
+}
+
+/**
+ * Unpublish a hostname. The documentation behind it (pages, search index,
+ * settings, usage) is deleted only when no other hostname still serves it, so
+ * a custom domain can be dropped without touching the default address.
+ * Idempotent: an unknown hostname answers 200 with `removed: false`.
+ */
+async function removeSite(hostname: string): Promise<[number, unknown]> {
+  const idx = await domains()
+  const m = idx[hostname]
+  if (!m) return [200, { ok: true, removed: false, hostname }]
+  delete idx[hostname]
+  const indexFile = join(dataDir(), '_domains', 'index.json')
+  const tmp = `${indexFile}.${process.pid}.tmp`
+  await writeFile(tmp, JSON.stringify(idx))
+  await rename(tmp, indexFile)
+
+  const stillServed = Object.values(idx).some((v) => v.docId === m.docId)
+  if (!stillServed && /^[\w.-]+$/.test(m.docId)) {
+    const site = { orgId: m.orgId ?? '', docId: m.docId }
+    await searchBackend(env).remove(site).catch((e: Error) => console.warn(`search remove ${hostname}: ${e.message}`))
+    const root = dataDir()
+    await rm(join(root, 'docs', m.docId), { recursive: true, force: true })
+    await rm(join(root, '_settings', `${m.docId}.json`), { force: true })
+    await rm(join(root, '_usage', `${m.docId}.json`), { force: true })
+  }
+  return [200, { ok: true, removed: true, hostname, deleted_content: !stillServed }]
 }
 
 async function describeSite(hostname: string, m: Mapping) {
@@ -281,6 +309,42 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (path === '/api/sites' && method === 'GET') {
     const idx = await domains()
     return send(res, 200, { sites: await Promise.all(Object.entries(idx).map(([h, m]) => describeSite(h, m))) })
+  }
+
+  // Operator search: same backend and ranking as the public /api/search, but
+  // authenticated by the operator token, so a control plane can search a
+  // private site on behalf of a signed-in dashboard user.
+  if (path === '/api/search' && method === 'POST') {
+    const hostname = url.searchParams.get('hostname')
+    if (!hostname) return send(res, 400, { error: 'hostname is required' })
+    const m = (await domains())[hostname]
+    if (!m) return send(res, 404, { error: `no site is published for ${hostname}` })
+    let b: { query?: unknown; version_id?: unknown; limit?: unknown }
+    try {
+      b = (await readBody(req)) as typeof b
+    } catch (e) {
+      return send(res, 400, { error: (e as Error).message })
+    }
+    const query = typeof b.query === 'string' ? b.query.trim().slice(0, 300) : ''
+    if (!query) return send(res, 400, { error: 'query is required' })
+    const site = { orgId: m.orgId ?? '', docId: m.docId }
+    try {
+      await ensureIndexed(site, env)
+      const results = await searchBackend(env).search(site, {
+        query,
+        versionId: typeof b.version_id === 'string' ? b.version_id : undefined,
+        limit: typeof b.limit === 'number' ? b.limit : undefined,
+      })
+      return send(res, 200, { results, total: results.length })
+    } catch (e) {
+      return send(res, 503, { error: `search unavailable: ${(e as Error).message}` })
+    }
+  }
+
+  if (path === '/api/sites' && method === 'DELETE') {
+    const hostname = url.searchParams.get('hostname')
+    if (!hostname) return send(res, 400, { error: 'hostname is required' })
+    return send(res, ...(await removeSite(hostname)))
   }
 
   if (path === '/api/settings' || path === '/api/usage' || path === '/api/reindex') {

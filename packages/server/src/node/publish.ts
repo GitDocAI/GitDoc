@@ -141,7 +141,9 @@ export const POST: APIRoute = async ({ request }) => {
           hostname,
           org_id: manifest.organization_id || '',
           doc_id: manifest.id || '',
-          is_private: process.env.DOCS_PRIVATE === 'true',
+          // `?private=true` lets a control plane publish a private site
+          // without a public window before its sign-in settings are applied.
+          is_private: process.env.DOCS_PRIVATE === 'true' || new URL(request.url).searchParams.get('private') === 'true',
         },
       ],
       source: { kind: 'local', content_dir: src },

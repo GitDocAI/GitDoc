@@ -101,8 +101,8 @@ function makeSite({ name, pages, section = 'Guides', extra = {} }) {
   return readFileSync(tgz)
 }
 
-const publish = (port, archive, hostname) =>
-  http(port, `/api/publish${hostname ? `?hostname=${hostname}` : ''}`, {
+const publish = (port, archive, hostname, query = '') =>
+  http(port, `/api/publish${hostname ? `?hostname=${hostname}` : '?x=1'}${query}`, {
     method: 'POST',
     headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/gzip' },
     body: archive,
@@ -176,6 +176,28 @@ test('a private site asks for a login, also under /api/… (regression)', async 
   // the API routes that really exist still answer without a redirect
   const search = await http(s.port, '/api/search', { host: 'secret.localhost', method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"query":"x"}' })
   assert.notEqual(search.status, 302)
+})
+
+test('operator search: finds pages of a private site with the machine token', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'OpSearch', pages: DOCS }), 'ops.localhost', '&private=true')
+  const admin = adminOf(s.port)
+  const body = JSON.stringify({ query: 'docker' })
+  const hdr = { 'content-type': 'application/json' }
+  assert.equal((await http(admin, '/api/search?hostname=ops.localhost', { method: 'POST', headers: hdr, body })).status, 401)
+  const r = await http(admin, '/api/search?hostname=ops.localhost', { method: 'POST', headers: { ...hdr, authorization: `Bearer ${TOKEN}` }, body })
+  assert.equal(r.status, 200, r.text)
+  assert.equal(JSON.parse(r.text).results[0].path, '/guides/deploy')
+  const miss = await http(admin, '/api/search?hostname=nope.localhost', { method: 'POST', headers: { ...hdr, authorization: `Bearer ${TOKEN}` }, body })
+  assert.equal(miss.status, 404)
+})
+
+test('publish?private=true makes the site private from the first request', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Closed', pages: [['p', 'P', 'SECRET_TEXT']] }), 'closed.localhost', '&private=true')
+  const r = await http(s.port, '/p', { host: 'closed.localhost' })
+  assert.equal(r.status, 302)
+  assert.doesNotMatch(r.text, /SECRET_TEXT/)
 })
 
 test('asset ids cannot be used to read other files', async () => {
@@ -654,6 +676,32 @@ test('reindex: rebuilds search from files already on disk (shared volume setups)
   // With no hostname it reindexes every site.
   const all = JSON.parse((await http(adminOf(s.port), '/api/reindex', { method: 'POST', headers: auth })).text)
   assert.deepEqual(Object.keys(all.sites), ['vol.localhost'])
+})
+
+test('delete site: unpublishes a hostname and removes the content when nothing else serves it', async () => {
+  const s = await startServer()
+  await publish(s.port, makeSite({ name: 'Gone', pages: DOCS }), 'gone.localhost')
+  await publish(s.port, makeSite({ name: 'Stays', pages: DOCS }), 'stays.localhost')
+  const auth = { authorization: `Bearer ${TOKEN}` }
+  const admin = adminOf(s.port)
+
+  assert.equal((await http(admin, '/api/sites?hostname=gone.localhost', { method: 'DELETE' })).status, 401)
+  assert.equal((await http(admin, '/api/sites', { method: 'DELETE', headers: auth })).status, 400)
+
+  const idx = () => JSON.parse(readFileSync(join(s.data, '_domains', 'index.json'), 'utf-8'))
+  const goneDoc = idx()['gone.localhost'].docId
+  assert.ok(existsSync(join(s.data, 'docs', goneDoc)))
+
+  const r = await http(admin, '/api/sites?hostname=gone.localhost', { method: 'DELETE', headers: auth })
+  assert.equal(r.status, 200, r.text)
+  assert.deepEqual(JSON.parse(r.text), { ok: true, removed: true, hostname: 'gone.localhost', deleted_content: true })
+  assert.deepEqual(Object.keys(idx()), ['stays.localhost'])
+  assert.ok(!existsSync(join(s.data, 'docs', goneDoc)), 'the content is gone')
+
+  // Idempotent, and the other site is untouched.
+  const again = await http(admin, '/api/sites?hostname=gone.localhost', { method: 'DELETE', headers: auth })
+  assert.equal(JSON.parse(again.text).removed, false)
+  assert.equal((await search(s.port, 'stays.localhost', 'docker')).results[0].path, '/guides/deploy')
 })
 
 test('geo: the visitor country comes from the edge header, only behind a trusted proxy', async () => {

@@ -133,6 +133,12 @@ curl -H "Authorization: Bearer $PUBLISH_TOKEN" "$ADMIN/api/usage?hostname=docs.a
 
 When the allowance is spent, `/api/ask` answers `429` with `{"code": "quota_exceeded", "limit", "period"}`. Counters survive restarts. A hosted control plane uses this same API to apply a plan's limits and to read usage: the engine never calls a billing service per request.
 
+`POST /api/publish?private=true` publishes the site as private from the first byte (the same effect as `DOCS_PRIVATE`, for one publish); sign-in providers are still configured in the site settings.
+
+`POST /api/search?hostname=…` (admin port, Bearer `PUBLISH_TOKEN`, body `{query, version_id?, limit?}`) runs the same search as the public endpoint without a reader session, for a control plane that searches a private site on behalf of its own signed-in user.
+
+`DELETE /api/sites?hostname=…` (admin port, Bearer `PUBLISH_TOKEN`) unpublishes a hostname. The documentation behind it (pages, search index, settings, usage) is deleted only when no other hostname still serves it; the call is idempotent (`removed: false` for an unknown hostname). A control plane uses it when a documentation or a custom domain is removed. Readers stop seeing the site within a minute (the hostname index is cached).
+
 `POST /api/reindex[?hostname=…]` (admin port) rebuilds the search index from the files already on disk and drops the caches. It is for setups where another process writes the site into the data volume instead of calling `/api/publish`.
 
 ## Behind a CDN
