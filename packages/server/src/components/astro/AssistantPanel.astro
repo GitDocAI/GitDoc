@@ -19,6 +19,7 @@ const { activeVersionId } = Astro.props
 
 <aside
   class="assistant-panel"
+  transition:persist="assistant-panel"
   data-assistant-panel
   data-assistant-version-id={activeVersionId}
   aria-label="AI Assistant"
