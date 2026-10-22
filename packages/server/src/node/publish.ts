@@ -132,20 +132,33 @@ export const POST: APIRoute = async ({ request }) => {
     // to this machine) so several docs on one server don't overwrite each other.
     const siteKey = (manifest['x-site-key'] as string | undefined) || manifest.name || ''
     const derived = slugify(siteKey) ? `${slugify(siteKey)}.localhost` : 'localhost'
-    const hostname =
-      new URL(request.url).searchParams.get('hostname') || process.env.PUBLISH_HOSTNAME || derived
+    // A documentation answers on the hostnames of its LATEST publish (the ones it
+    // had before are dropped), so a site that has several, for example its own
+    // address and a custom domain, must send all of them in this one request:
+    // `?hostname=a&hostname=b` (a comma-separated list works too).
+    const params = new URL(request.url).searchParams
+    const hostnames = [
+      ...new Set(
+        params
+          .getAll('hostname')
+          .flatMap((h) => h.split(','))
+          .map((h) => h.trim())
+          .filter(Boolean),
+      ),
+    ]
+    if (!hostnames.length) hostnames.push(process.env.PUBLISH_HOSTNAME || derived)
+    const hostname = hostnames[0]
+    const isPrivate = process.env.DOCS_PRIVATE === 'true' || params.get('private') === 'true'
     const input = {
       output: { kind: 'fs', dir: dataDir },
-      mappings: [
-        {
-          hostname,
-          org_id: manifest.organization_id || '',
-          doc_id: manifest.id || '',
-          // `?private=true` lets a control plane publish a private site
-          // without a public window before its sign-in settings are applied.
-          is_private: process.env.DOCS_PRIVATE === 'true' || new URL(request.url).searchParams.get('private') === 'true',
-        },
-      ],
+      mappings: hostnames.map((h) => ({
+        hostname: h,
+        org_id: manifest.organization_id || '',
+        doc_id: manifest.id || '',
+        // `?private=true` lets a control plane publish a private site
+        // without a public window before its sign-in settings are applied.
+        is_private: isPrivate,
+      })),
       source: { kind: 'local', content_dir: src },
     }
 
@@ -172,7 +185,7 @@ export const POST: APIRoute = async ({ request }) => {
     } catch (e) {
       search = { error: (e as Error).message }
     }
-    return json({ ok: true, hostname, result, search })
+    return json({ ok: true, hostname, hostnames, result, search })
   } finally {
     busy = false
     await rm(work, { recursive: true, force: true })

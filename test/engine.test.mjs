@@ -737,6 +737,21 @@ test('reindex: rebuilds search from files already on disk (shared volume setups)
   assert.deepEqual(Object.keys(all.sites), ['vol.localhost'])
 })
 
+test('publish: one request can name several hostnames and all of them serve the site', async () => {
+  const s = await startServer()
+  const site = makeSite({ name: 'Many Names', pages: DOCS })
+  const r = await publish(s.port, site, 'one.localhost', '&hostname=two.localhost')
+  assert.equal(r.status, 200, r.text)
+  assert.deepEqual(JSON.parse(r.text).hostnames, ['one.localhost', 'two.localhost'])
+  for (const h of ['one.localhost', 'two.localhost']) {
+    assert.equal((await http(s.port, '/guides/deploy', { host: h })).status, 200, h)
+  }
+  // The latest publish defines the hostnames: leave one out and it is dropped.
+  await publish(s.port, site, 'one.localhost')
+  assert.equal((await http(s.port, '/guides/deploy', { host: 'one.localhost' })).status, 200)
+  assert.equal((await http(s.port, '/guides/deploy', { host: 'two.localhost' })).status, 404)
+})
+
 test('delete site: unpublishes a hostname and removes the content when nothing else serves it', async () => {
   const s = await startServer()
   await publish(s.port, makeSite({ name: 'Gone', pages: DOCS }), 'gone.localhost')
