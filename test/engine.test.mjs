@@ -626,6 +626,65 @@ test('events: searches and page views are recorded when asked, and only then', a
   assert.ok(!existsSync(join(off.data, '_events')))
 })
 
+test('ask: when the main AI endpoint fails the answer comes from the fallback endpoint', async () => {
+  const { createServer: srv } = await import('node:http')
+  const down = srv((_req, res) => res.writeHead(503).end('{"error":"down"}'))
+  await new Promise((ok) => down.listen(0, '127.0.0.1', ok))
+  cleanup.push(() => down.close())
+  const fb = await fakeAI({ answer: 'From the fallback [1].' })
+  const s = await startServer({
+    env: {
+      AI_URL: `http://127.0.0.1:${down.address().port}`,
+      AI_API_KEY: 'k',
+      AI_CHAT_MODEL: 'primary-model',
+      AI_FALLBACK_URL: fb.url,
+      AI_FALLBACK_API_KEY: 'fallback-key',
+      AI_FALLBACK_CHAT_MODEL: 'fallback-model',
+    },
+  })
+  const enabled = { assistant: { enabled: true } }
+  await publish(s.port, makeSite({ name: 'Fall Back', pages: DOCS, extra: enabled }), 'fb.localhost')
+  const r = await post(s.port, 'fb.localhost', '/api/ask', { question: 'docker?' })
+  assert.equal(r.status, 200, JSON.stringify(r.json))
+  assert.match(r.json.answer, /From the fallback/)
+  const call = fb.seen.find((x) => x.url === '/chat/completions')
+  assert.equal(call.body.model, 'fallback-model', 'the fallback model is used, not the primary one')
+  assert.equal(call.headers.authorization, 'Bearer fallback-key')
+})
+
+test('embeddings can use their own endpoint, with their own key, while chat keeps the main one', async () => {
+  const chat = await fakeAI()
+  const emb = await fakeAI()
+  const s = await startServer({
+    env: {
+      AI_URL: chat.url,
+      AI_API_KEY: 'chat-key',
+      AI_CHAT_MODEL: 'chat-x',
+      AI_EMBEDDING_URL: emb.url,
+      AI_EMBEDDING_API_KEY: 'emb-key',
+      AI_EMBEDDING_MODEL: 'emb-x',
+    },
+  })
+  const out = JSON.parse((await publish(s.port, makeSite({ name: 'Own Embeddings', pages: DOCS }), 'oe.localhost')).text)
+  assert.equal(out.search.semantic, true, JSON.stringify(out))
+  const embCall = emb.seen.find((x) => x.url === '/embeddings')
+  assert.ok(embCall, 'embeddings went to their own endpoint')
+  assert.equal(embCall.body.model, 'emb-x')
+  assert.equal(embCall.headers.authorization, 'Bearer emb-key')
+  assert.ok(!chat.seen.some((x) => x.url === '/embeddings'), 'the chat endpoint saw no embeddings request')
+})
+
+test('ask: with no fallback configured a failing endpoint is still a 503', async () => {
+  const { createServer: srv } = await import('node:http')
+  const down = srv((_req, res) => res.writeHead(503).end('{}'))
+  await new Promise((ok) => down.listen(0, '127.0.0.1', ok))
+  cleanup.push(() => down.close())
+  const s = await startServer({ env: { AI_URL: `http://127.0.0.1:${down.address().port}`, AI_CHAT_MODEL: 'm' } })
+  await publish(s.port, makeSite({ name: 'No Fb', pages: DOCS, extra: { assistant: { enabled: true } } }), 'nofb.localhost')
+  const r = await post(s.port, 'nofb.localhost', '/api/ask', { question: 'docker?' })
+  assert.equal(r.status, 503)
+})
+
 test('the assistant is offered only when the docs turn it on AND the server has a chat model', async () => {
   const enabled = { assistant: { enabled: true, floating: true, custom_instructions: 'Be brief.' } }
   const surfaces = (text) => ({
